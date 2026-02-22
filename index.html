@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home Survey App</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="html2pdf.bundle.min.js"></script>
+</head>
+<body>
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-logo-section">
+            <div class="header-logo">🏠</div>
+            <div class="header-title-section">
+                <div class="header-title">Hausbot</div>
+                <div class="header-subtitle">Smart Home Survey</div>
+            </div>
+        </div>
+        <div class="header-menu">
+            <button class="btn-settings" onclick="openSettingsModal()">⚙️ Settings</button>
+            <div class="header-user">👤 User</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- ===== DASHBOARD PAGE ===== -->
+        <div id="dashboardPage" class="page active">
+            <h1 class="dashboard-title">Active Surveys</h1>
+            <div id="propertiesList" class="properties-list"></div>
+            <button class="btn btn-add" onclick="goToCreateProperty()">+ New Survey</button>
+        </div>
+
+        <!-- ===== CREATE PROPERTY PAGE ===== -->
+        <div id="createPropertyPage" class="page">
+            <h1 class="dashboard-title">Create New Survey</h1>
+
+            <div class="form-group">
+                <label class="form-label">Client Name *</label>
+                <input type="text" class="form-input" placeholder="Enter client name" id="clientName">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Client Phone</label>
+                <input type="tel" class="form-input" placeholder="Enter client phone number" id="clientPhone">
+            </div>
+
+  
+            <div class="form-group">
+                <label class="form-label">Property Type *</label>
+                <select class="form-select" id="propertyType">
+                    <option value="">Select property type</option>
+                    <option value="apartment">Apartment</option>
+                    <option value="duplex">Duplex</option>
+                    <option value="villa">Villa</option>
+                    <option value="office">Office</option>
+                    <option value="shop">Shop</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Location</label>
+                <input type="text" class="form-input" placeholder="Enter property location" id="propertyLocation">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Total Area (m²)</label>
+                <input type="number" class="form-input" placeholder="Enter total area" id="propertyArea">
+            </div>
+
+            <button class="btn btn-primary" onclick="saveProperty()">Save Property & Start Survey</button>
+            <button class="btn btn-secondary" onclick="goToDashboard()">Cancel</button>
+        </div>
+
+        <!-- ===== ROOMS PAGE ===== -->
+        <div id="roomsPage" class="page">
+            <!-- Property Total Cost Display -->
+            <div class="property-total-cost">
+                <div class="property-total-cost-label">Property Total Cost</div>
+                <div class="property-total-cost-amount" id="propertyTotalCost">0 EGP</div>
+            </div>
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+    <div class="room-tabs" id="roomTabs" style="margin-bottom: 0; flex-wrap: nowrap; overflow-x: auto;"></div>
+    
+    <button class="room-tab" id="showAddRoomBtn" onclick="toggleRoomInput()" style="background: rgba(0, 212, 255, 0.2); border: 1px dashed #00d4ff; color: #00d4ff; min-width: 45px;">+</button>
+</div>
+
+<div id="newRoomInputContainer" class="room-header" style="display: none; margin-bottom: 20px; border: 1px solid #00d4ff; padding: 15px;">
+    <div class="room-header-title" style="font-size: 1rem; margin-bottom: 10px;">Create New Room</div>
+    
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <input type="text" id="newRoomNameInput" class="form-input" 
+               placeholder="e.g., Guest Room" 
+               style="flex: 2; min-width: 200px; background: rgba(255,255,255,0.1); color: #ffffff !important; border: 1px solid rgba(0,212,255,0.3);">
+        
+        <div style="display: flex; gap: 8px; flex: 1; justify-content: flex-start; min-width: 150px;">
+            <button class="btn btn-primary btn-small" onclick="addNewRoomToProperty()" style="margin: 0; padding: 8px 15px; font-size: 0.85rem;">Add</button>
+            <button class="btn btn-secondary btn-small" onclick="toggleRoomInput()" style="margin: 0; padding: 8px 15px; font-size: 0.85rem;">Cancel</button>
+        </div>
+    </div>
+</div>
+            <!-- Room Navigation Tabs -->
+            <div class="room-tabs" id="roomTabs"></div>
+
+            <!-- Room Header -->
+            <div class="room-header">
+                <div class="room-header-title" id="currentRoomTitle">Room</div>
+                <div class="room-header-info" id="currentRoomInfo">📍 Floor Info</div>
+                <div class="room-total-cost" id="roomTotalCost">Room Total: 0 EGP</div>
+            </div>
+
+            <!-- Device Categories Container -->
+            <div id="deviceCategoriesContainer"></div>
+
+            <!-- Action Buttons -->
+            <button class="btn btn-primary" onclick="goToInvoice()">View Invoice Summary</button>
+            <button class="btn btn-secondary" onclick="goToDashboard()">Back to Dashboard</button>
+        </div>
+
+        <!-- ===== INVOICE PAGE ===== -->
+        <div id="invoicePage" class="page">
+            <h1 class="dashboard-title">Invoice Summary</h1>
+
+            <div id="invoiceSummary" class="invoice-summary"></div>
+
+            <!-- Total Section -->
+            <div class="invoice-total-section">
+                <div class="invoice-total-label">Total Project Cost</div>
+                <div class="invoice-total-amount" id="invoiceTotalAmount">0 EGP</div>
+            </div>
+
+            <!-- Action Buttons -->
+             <button class="btn btn-primary" onclick="generatePDF()">Generate PDF Report</button>
+            <button class="btn btn-secondary" onclick="goToRooms()">Back to Rooms</button>
+        </div>
+    </div>
+
+    <!-- ===== SETTINGS MODAL ===== -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeSettingsModal()">&times;</span>
+            <h2 class="modal-title">Settings</h2>
+
+            <!-- Background Image Setting -->
+            <div class="form-group">
+                <label class="form-label">Background Image URL</label>
+                <input type="text" class="form-input" id="backgroundImageUrl" placeholder="Enter image URL">
+                <button class="btn btn-primary" onclick="updateBackgroundImage()">Update Background</button>
+            </div>
+
+            <!-- Device Management -->
+            <div class="form-group">
+                <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">Device Management</h3>
+                <div id="devicesList" class="devices-list"></div>
+                <button class="btn btn-primary" onclick="openAddDeviceModal()">+ Add New Device</button>
+            </div>
+
+            <button class="btn btn-secondary" onclick="closeSettingsModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- ===== ADD DEVICE MODAL ===== -->
+    <div id="addDeviceModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeAddDeviceModal()">&times;</span>
+            <h2 class="modal-title">Add New Device</h2>
+
+            <div class="form-group">
+                <label class="form-label">Device Name *</label>
+                <input type="text" class="form-input" id="newDeviceName" placeholder="e.g., Zigbee Smart Switch">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Category *</label>
+                <select class="form-select" id="newDeviceCategory">
+                    <option value="">Select category</option>
+                    <option value="switch">Smart Switches</option>
+                    <option value="sensor">Sensors</option>
+                    <option value="camera">Cameras</option>
+                    <option value="curtain">Smart Curtains</option>
+                    <option value="lock">Smart Locks</option>
+                    <option value="ir">IR Controllers</option>
+                    <option value="plug">Smart Plugs</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Brand</label>
+                <input type="text" class="form-input" id="newDeviceBrand" placeholder="e.g., Philips Hue">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Protocol</label>
+                <input type="text" class="form-input" id="newDeviceProtocol" placeholder="e.g., Zigbee, Wi-Fi, Z-Wave">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Price (EGP) *</label>
+                <input type="number" class="form-input" id="newDevicePrice" placeholder="0" min="0">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Supplier</label>
+                <input type="text" class="form-input" id="newDeviceSupplier" placeholder="e.g., Local Distributor">
+            </div>
+
+            <button class="btn btn-primary" onclick="addNewDevice()">Add Device</button>
+            <button class="btn btn-secondary" onclick="closeAddDeviceModal()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- ===== EDIT DEVICE MODAL ===== -->
+    <div id="editDeviceModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeEditDeviceModal()">&times;</span>
+            <h2 class="modal-title">Edit Device</h2>
+
+            <div class="form-group">
+                <label class="form-label">Device Name *</label>
+                <input type="text" class="form-input" id="editDeviceName">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Price (EGP) *</label>
+                <input type="number" class="form-input" id="editDevicePrice" min="0">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Brand</label>
+                <input type="text" class="form-input" id="editDeviceBrand">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Protocol</label>
+                <input type="text" class="form-input" id="editDeviceProtocol">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Supplier</label>
+                <input type="text" class="form-input" id="editDeviceSupplier">
+            </div>
+
+            <button class="btn btn-primary" onclick="saveEditedDevice()">Save Changes</button>
+            <button class="btn btn-secondary" onclick="closeEditDeviceModal()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- ===== EDIT PROPERTY MODAL ===== -->
+    <div id="editPropertyModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeEditPropertyModal()">&times;</span>
+            <h2 class="modal-title">Edit Property</h2>
+
+            <div class="form-group">
+                <label class="form-label">Client Name *</label>
+                <input type="text" class="form-input" id="editPropertyClientName">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Client Phone</label>
+                <input type="tel" class="form-input" id="editPropertyClientPhone">
+            </div>
+
+       
+
+            <div class="form-group">
+                <label class="form-label">Property Type *</label>
+                <select class="form-select" id="editPropertyType">
+                    <option value="apartment">Apartment</option>
+                    <option value="duplex">Duplex</option>
+                    <option value="villa">Villa</option>
+                    <option value="office">Office</option>
+                    <option value="shop">Shop</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Location</label>
+                <input type="text" class="form-input" id="editPropertyLocation">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Total Area (m²)</label>
+                <input type="number" class="form-input" id="editPropertyArea">
+            </div>
+
+            <button class="btn btn-primary" onclick="saveEditedProperty()">Save Changes</button>
+            <button class="btn btn-secondary" onclick="closeEditPropertyModal()">Cancel</button>
+        </div>
+    </div>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";// Add getDocs to your imports
+const firebaseConfig = {
+    apiKey: "AIzaSyBKCQFB0shdoDWCEpxfGVvuJpg8e1OzBh4",
+    authDomain: "housbot-eb8b9.firebaseapp.com",
+    projectId: "housbot-eb8b9",
+    storageBucket: "housbot-eb8b9.firebasestorage.app",
+    messagingSenderId: "913097857610",
+    appId: "1:913097857610:web:1f7e90b8f865b118f6e4b3"
+};
+//  Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+window.db = db;
+window.fbMethods = { doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs };</script>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+
+
+</body>
+</html>
