@@ -554,8 +554,14 @@ async function generatePDF() {
     // --- FINANCIAL CALCULATIONS ---
     const hardwareSubtotal = calculatePropertyTotal(property);
     const serviceFees = hardwareSubtotal * 0.10; // 10% Services
+    if (serviceFees.toLocaleString()<3000){
+
+        fees=3000;
+    }else{
+        fees= serviceFees.toLocaleString();
+    }
     const taxAmount = hardwareSubtotal * 0.0;    // 4% Tax
-    const finalProjectTotal = hardwareSubtotal + serviceFees + taxAmount;
+    const finalProjectTotal = hardwareSubtotal + fees + taxAmount;
 
     const element = document.createElement('div');
     element.style.cssText = `background: #0a0e14; width: 297mm; margin: 0; padding: 0;`;
@@ -736,6 +742,8 @@ async function generatePDF() {
         });
     });
 
+
+
     html += `
                 </tbody>
             </table>
@@ -757,7 +765,8 @@ async function generatePDF() {
                         <span style="font-size: 1.1rem; display: block;">Technical Services & Installation</span>
                         <small style="opacity: 0.6;">Professional integration and setup (10%)</small>
                     </div>
-                    <span style="font-size: 1.2rem; font-weight: 600;">+ ${serviceFees.toLocaleString()} EGP</span>
+                    
+                    <span style="font-size: 1.2rem; font-weight: 600;">+ ${fees} EGP</span>
                 </div>
                 <div style="${cardStyle} flex-direction: row; justify-content: space-between; align-items: center;">
                     <div>
