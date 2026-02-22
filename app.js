@@ -592,9 +592,17 @@ async function generatePDF() {
     let html = `
         <div style="${pageStyle} justify-content: center; align-items: center;">
             <div style="width: 85%; border: 1.5px solid #00d4ff; border-radius: 20px; padding: 40px; position: relative; background: radial-gradient(circle at center, #111827 0%, #0a0e14 100%);">
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 160px;opacity: 0;">
-                </div>
+            <div style="text-align: center; margin-bottom: 20px;">
+<div style="text-align: center; margin-bottom: 20px;">
+    <div style="display: inline-block; background-color: #050a10; padding: 10px; border-radius: 8px;">
+        <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" 
+             style="max-width: 160px; 
+                    display: block; 
+                    background-color: transparent; 
+                    filter: drop-shadow(0px 0px 1px rgba(255,255,255,0.1));">
+    </div>
+</div>
+</div>
                 <h1 style="color: #00d4ff; font-size: 3.2rem; text-align: center; text-transform: uppercase; letter-spacing: 12px; margin: 0; font-weight: 700;">SMART HOME SURVEY</h1>
                 <p style="text-align: center; font-size: 1.1rem; opacity: 0.6; margin-bottom: 40px; letter-spacing: 2px;">Generated on ${generationDate}</p>
                 <div style="height: 1px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent); margin-bottom: 30px;"></div>
@@ -845,9 +853,12 @@ async function generatePDF() {
         <div class="html2pdf__page-break"></div>
 
         <div style="${pageStyle} justify-content: center; align-items: center; text-align: center;">
-        <div style="margin-top: 30px;">
-            <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 160px; opacity: 0;">
-        </div>
+<div style="margin-top: 30px; text-align: center;">
+    <div style="display: inline-block; background-color: #0a0e14; padding: 12px; border-radius: 8px;">
+        <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" 
+             style="max-width: 160px; opacity: 1; display: block;">
+    </div>
+</div>
             <div style="max-width: 600px;">
                 <h2 style="color: #00d4ff; font-size: 2.5rem; margin-bottom: 10px;">We're always here for you </h2>
                 <p style="font-size: 1.2rem; opacity: 0.8; margin-bottom: 40px;">Our team is ready to answer any technical or financial questions you may have.</p>
