@@ -593,7 +593,7 @@ async function generatePDF() {
         <div style="${pageStyle} justify-content: center; align-items: center;">
             <div style="width: 85%; border: 1.5px solid #00d4ff; border-radius: 20px; padding: 40px; position: relative; background: radial-gradient(circle at center, #111827 0%, #0a0e14 100%);">
                 <div style="text-align: center; margin-bottom: 20px;">
-                    <img src="https://raw.githubusercontent.com/Farah-1/housbot/main/logo.png" style="max-width: 160px;">
+                    <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 160px;">
                 </div>
                 <h1 style="color: #00d4ff; font-size: 3.2rem; text-align: center; text-transform: uppercase; letter-spacing: 12px; margin: 0; font-weight: 700;">SMART HOME SURVEY</h1>
                 <p style="text-align: center; font-size: 1.1rem; opacity: 0.6; margin-bottom: 40px; letter-spacing: 2px;">Generated on ${generationDate}</p>
@@ -846,7 +846,7 @@ async function generatePDF() {
 
         <div style="${pageStyle} justify-content: center; align-items: center; text-align: center;">
         <div style="margin-top: 30px;">
-            <img src="https://raw.githubusercontent.com/Farah-1/housbot/main/logo.png" style="max-width: 160px; opacity: 1;">
+            <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 160px; opacity: 1;">
         </div>
             <div style="max-width: 600px;">
                 <h2 style="color: #00d4ff; font-size: 2.5rem; margin-bottom: 10px;">We're always here for you </h2>
