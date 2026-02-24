@@ -4,13 +4,15 @@
 // Device Categories
 const DEVICE_CATEGORIES = {
     switch: { name: 'Smart Switches', icon: '⚡' },
-    sensor: { name: 'Sensors', icon: '📡' },
+    sensor: { name: 'Sensors & Actuators', icon: '📡' },
     camera: { name: 'Cameras', icon: '📹' },
     curtain: { name: 'Smart Curtains', icon: '🪟' },
     lock: { name: 'Smart Locks', icon: '🔐' },
     ir: { name: 'IR Controllers', icon: '📺' },
-    plug: { name: 'Smart Plugs', icon: '🔌' }
+    plug: { name: 'Gitway Hub', icon: '🔌' },
+    sound: { name: 'Sound systems', icon: '🔊' }
 };
+
 
 // Room Types
 const ROOM_TYPES = {
