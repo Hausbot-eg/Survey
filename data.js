@@ -10,7 +10,8 @@ const DEVICE_CATEGORIES = {
     lock: { name: 'Smart Locks', icon: '🔐' },
     ir: { name: 'IR Controllers', icon: '📺' },
     plug: { name: 'Gitway Hub', icon: '🔌' },
-    sound: { name: 'Sound systems', icon: '🔊' }
+    sound: { name: 'Sound systems', icon: '🔊' },
+    intercom: { name: 'Intercom Systems', icon: '📞' }
 };
 
 
