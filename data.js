@@ -21,7 +21,8 @@ const ROOM_TYPES = {
     duplex: ['Reception', 'Kitchen', 'Bathroom', 'Master Bedroom', 'Kids Bedroom', 'Balcony'],
     villa: ['Reception', 'Kitchen', 'Office', 'Bathroom', 'Master Bedroom', 'Kids Bedroom', 'Balcony', 'Storage', 'Server Room'],
     office: ['Workspace', 'Manager Room', 'Meeting Room', 'Server Room'],
-    shop: ['Main Area', 'Storage', 'Office', 'Bathroom']
+    shop: ['Main Area', 'Storage', 'Office', 'Bathroom'],
+    other:['Reception']
 };
 
 // Default Devices Database
