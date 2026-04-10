@@ -443,23 +443,40 @@ function updateDeviceQuantity(roomId, deviceId, newQuantity) {
         document.getElementById('propertyTotalCost').textContent = totalCost.toLocaleString() + ' EGP';
     }
 }
-
-function removeDeviceFromRoom(roomId, deviceId) {
+async function removeDeviceFromRoom(roomId, deviceId) {
+    const { doc, updateDoc } = window.fbMethods;
     const property = getPropertyById(currentPropertyId);
+    
+    if (!property) return;
+
     const room = property.rooms.find(r => r.id === roomId);
     
     if (room) {
+        // 1. Remove the device from the local array
         room.devices = room.devices.filter(d => d.deviceId !== deviceId);
-        saveDataToLocalStorage();
-        renderDeviceCategories(property);
-        renderCurrentRoom(property);
         
-        // Update property total
-        const totalCost = calculatePropertyTotal(property);
-        document.getElementById('propertyTotalCost').textContent = totalCost.toLocaleString() + ' EGP';
+        try {
+            // 2. Sync the updated rooms array to Firebase
+            const propertyRef = doc(window.db, "properties", currentPropertyId);
+            await updateDoc(propertyRef, {
+                rooms: property.rooms
+            });
+            
+            // 3. Update the UI after successful cloud sync
+            renderDeviceCategories(property);
+            renderCurrentRoom(property);
+            
+            // 4. Update the total cost display
+            const totalCost = calculatePropertyTotal(property);
+            document.getElementById('propertyTotalCost').textContent = totalCost.toLocaleString() + ' EGP';
+            
+            console.log("Device removed and synced to cloud.");
+        } catch (error) {
+            console.error("Error removing device from cloud:", error);
+            alert("Could not sync removal to the cloud database.");
+        }
     }
 }
-
 function updateAddDeviceQuantity(categoryKey) {
     const selectElement = document.getElementById(`select-${categoryKey}`);
     const device = getDeviceById(parseInt(selectElement.value));
@@ -560,6 +577,7 @@ async function generatePDF() {
     }else{
         fees= serviceFees;
     }
+    fees=0.0;
     const taxAmount = hardwareSubtotal * 0.0;    // 4% Tax
     const finalProjectTotal = hardwareSubtotal + fees + taxAmount;
 
@@ -709,36 +727,86 @@ async function generatePDF() {
         }
     });
 
-    // --- HARDWARE QUOTATION (TOTAL TABLE) ---
-    html += `
-        <div style="${pageStyle}">
-            <h2 style="color: #00d4ff;  padding-bottom: 10px; font-size: 1.8rem;">Full Hardware Quotation</h2>
-            <table style="width: 100%; margin-top: 20px;">
+ // Configuration
+const maxRowsPerPage = 10; // Adjust this number based on your styling
+let rowCount = 0;
+
+// --- HARDWARE QUOTATION (TOTAL TABLE) ---
+// Initialize the first page
+html += `
+    <div style="${pageStyle}">
+        <h2 style="color: #00d4ff; padding-bottom: 10px; font-size: 1.8rem;">Full Hardware Quotation</h2>
+        <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left;">
+                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff;">Item Description</th>
+                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">Qty</th>
+                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: right;">Total</th>
+                </tr>
+            </thead>
+            <tbody style="font-size: 0.85rem;">
+`;
+
+
+        // 1. First, create an object to store aggregated device data
+const aggregatedDevices = {};
+
+property.rooms.forEach(room => {
+    room.devices.forEach(roomDevice => {
+        const deviceId = roomDevice.deviceId;
+        
+        if (aggregatedDevices[deviceId]) {
+            // If device already exists, just add to the quantity
+            aggregatedDevices[deviceId].quantity += roomDevice.quantity;
+        } else {
+            // If it's the first time seeing this device, fetch details and initialize
+            const deviceDetails = getDeviceById(deviceId);
+            if (deviceDetails) {
+                aggregatedDevices[deviceId] = {
+                    ...deviceDetails,
+                    quantity: roomDevice.quantity
+                };
+            }
+        }
+    });
+});
+
+// 2. Now loop through the aggregated object to generate the HTML
+Object.values(aggregatedDevices).forEach(device => {
+    // Check if we need to break to a new page
+    if (rowCount > 0 && rowCount % maxRowsPerPage === 0) {
+        html += `
+                </tbody>
+            </table>
+        </div>
+        <div style="${pageStyle} page-break-before: always;">
+            <h2 style="color: #00d4ff; padding-bottom: 10px; font-size: 1.8rem; opacity: 0.5;">Full Hardware Quotation (Cont.)</h2>
+            <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
                 <thead>
-                    <tr style=" text-align: left;">
-                        <th style="padding: 12px;  border-bottom: 1px solid #00d4fffont-size: 0.9rem;color: #00d4ff;">Item Description</th>
-                        <th style="padding: 12px;  border-bottom: 1px solid #00d4fffont-size: 0.9rem;color: #00d4ff;">Qty</th>
-                        <th style="padding: 12px; border-bottom: 1px solid #00d4ff font-size: 0.9rem;color: #00d4ff; text-align: right;">Total</th>
+                    <tr style="text-align: left;">
+                        <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff;">Item Description</th>
+                        <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">Qty</th>
+                        <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: right;">Total</th>
                     </tr>
                 </thead>
                 <tbody style="font-size: 0.85rem;">
+        `;
+    }
+
+    html += `
+        <tr>
+            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <strong>${device.name}</strong>
+            </td>
+            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.quantity}</td>
+            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: right;">${(device.price * device.quantity).toLocaleString()} EGP</td>
+        </tr>
     `;
-    property.rooms.forEach(room => {
-        room.devices.forEach(roomDevice => {
-            const device = getDeviceById(roomDevice.deviceId);
-            if (device) {
-                html += `
-                    <tr>
-                        <td style="padding: 8px;border-bottom: 1px solid rgba(255,255,255,0.1); ">
-                            <strong>${device.name}</strong><br><small style="opacity: 0.6;">${room.name}</small>
-                        </td>
-                        <td style="padding: 8px;  border-bottom: 1px solid rgba(255,255,255,0.1);  text-align: center;">${roomDevice.quantity}</td>
-                        <td style="padding: 8px;  border-bottom: 1px solid rgba(255,255,255,0.1);  text-align: right;">${(device.price * roomDevice.quantity).toLocaleString()} EGP</td>
-                    </tr>
-                `;
-            }
-        });
-    });
+
+    rowCount++; // Ensure rowCount is being incremented to make pagination work
+
+   
+});
 
 
 
