@@ -741,6 +741,8 @@ html += `
                 <tr style="text-align: left;">
                     <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff;">Item Description</th>
                     <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">Qty</th>
+                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">UNIT PRICE</th>
+
                     <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: right;">Total</th>
                 </tr>
             </thead>
@@ -786,6 +788,7 @@ Object.values(aggregatedDevices).forEach(device => {
                     <tr style="text-align: left;">
                         <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff;">Item Description</th>
                         <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">Qty</th>
+                        <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">UNIT PRICE</th>
                         <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: right;">Total</th>
                     </tr>
                 </thead>
@@ -799,6 +802,7 @@ Object.values(aggregatedDevices).forEach(device => {
                 <strong>${device.name}</strong>
             </td>
             <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.quantity}</td>
+            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.price}</td>
             <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: right;">${(device.price * device.quantity).toLocaleString()} EGP</td>
         </tr>
     `;
