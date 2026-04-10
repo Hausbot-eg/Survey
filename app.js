@@ -577,7 +577,6 @@ async function generatePDF() {
     }else{
         fees= serviceFees;
     }
-    fees=0.0;
     const taxAmount = hardwareSubtotal * 0.0;    // 4% Tax
     const finalProjectTotal = hardwareSubtotal + fees + taxAmount;
 
@@ -728,7 +727,7 @@ async function generatePDF() {
     });
 
  // Configuration
-const maxRowsPerPage = 10; // Adjust this number based on your styling
+const maxRowsPerPage = 15; // Adjust this number based on your styling
 let rowCount = 0;
 
 // --- HARDWARE QUOTATION (TOTAL TABLE) ---
@@ -934,7 +933,8 @@ Object.values(aggregatedDevices).forEach(device => {
         <div style="${pageStyle} justify-content: center; align-items: center; text-align: center;">
 <div style="margin-top: 30px; text-align: center;">
     <div style="display: inline-block;padding: 12px; ">
-             <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 150px; margin-top: 60px; opacity: 1;">
+            <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 150px; margin-top: 60px; opacity: 0.5;">
+            
 
     </div>
       
