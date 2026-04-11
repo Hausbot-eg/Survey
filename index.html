@@ -18,6 +18,7 @@
             </div>
         </div>
         <div class="header-menu">
+            <button class="btn-settings" onclick="goToAdmin()">🛠 Admin</button>
             <button class="btn-settings" onclick="openSettingsModal()">⚙️ Settings</button>
             <div class="header-user">👤 User</div>
         </div>
@@ -74,8 +75,11 @@
         </div>
 
         <!-- ===== ROOMS PAGE ===== -->
-        <div id="roomsPage" class="page">
-            <!-- Property Total Cost Display -->
+      <div id="roomsPage" class="page">
+        <div class="property-header-actions" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1 class="dashboard-title" style="margin: 0;">Property Rooms</h1>
+          
+        </div>
             <div class="property-total-cost">
                 <div class="property-total-cost-label">Property Total Cost</div>
                 <div class="property-total-cost-amount" id="propertyTotalCost">0 EGP</div>
@@ -115,6 +119,9 @@
 
             <!-- Action Buttons -->
             <button class="btn btn-primary" onclick="goToInvoice()">View Invoice Summary</button>
+              <button class="btn btn-primary" onclick="openArchitectTool()">
+                 Designing  blueprints & Coverage
+            </button>
             <button class="btn btn-secondary" onclick="goToDashboard()">Back to Dashboard</button>
         </div>
 
@@ -134,6 +141,179 @@
              <button class="btn btn-primary" onclick="generatePDF()">Generate PDF Report</button>
             <button class="btn btn-secondary" onclick="goToRooms()">Back to Rooms</button>
         </div>
+
+<div id="adminPage" class="page">
+    <div style="max-width: 1400px; margin: 0 auto; width: 98%;">
+        <h1 class="dashboard-title" style="margin-bottom: 20px;">Admin Dashboard</h1>
+        
+        <div class="property-card" style="width: 100%; padding: 15px; cursor: default; overflow-x: auto;">
+            <table id="adminDevicesTable" style="width: 100%; border-collapse: collapse; color: white; min-width: 1000px;">
+                <thead>
+    <tr style="border-bottom: 2px solid rgba(255,255,255,0.1); color: var(--primary-color);">
+        <th style="padding: 12px; text-align: left;">Device & Brand</th>
+        <th style="padding: 12px; text-align: left;">Category</th>
+        <th style="padding: 12px; text-align: left;">Group</th>
+        <th style="padding: 12px; text-align: left;">Protocol</th>
+        <th style="padding: 12px; text-align: left;">Price</th>
+        <th style="padding: 12px; text-align: left;">Status</th>
+        <th style="padding: 12px; text-align: left;">Coverage</th>
+        <th style="padding: 12px; text-align: left;">Created</th>
+        <th style="padding: 12px; text-align: center;">Actions</th>
+    </tr>
+</thead>
+        <tbody id="adminDevicesList"></tbody>
+    </table>
+</div>
+
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <button class="btn btn-add" style="margin: 0; flex: 1; padding: 15px;" onclick="openAddDeviceModal()">
+                + Add New Device
+            </button>
+        </div>
+
+        <!-- Group Color Management Section (Moved to bottom and shrunk) -->
+        <div class="property-card" style="display :block;width : 100%; padding: 15px; margin-top: 25px; background: rgba(0,0,0,0.3); border: 1px solid rgba(0, 212, 255, 0.2);">
+            <div id="groupColorsContainer" class="group-color-grid">
+                <!-- Color pickers will be injected here -->
+            </div>
+            <br>
+            <button class="btn btn-add" onclick="saveGroupColors()">change Palette</button>
+            <!-- <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;"> -->
+            <!-- </div> -->
+        </div>
+
+</div>
+<div id="addDeviceModal" class="modal">
+    <div class="modal-content">
+        <h3  style="color: white; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">Add New Device</h3>
+        <div class="form-group">
+            <label class="form-label">Device Name</label>
+            <input type="text" class="form-input" id="addDeviceName">
+        </div>
+        <div class="form-group">
+    <label class="form-label">Status</label>
+    <select class="form-input" id="addDeviceStatus"> <option value="Active">Active</option>
+        <option value="Inactive">Inactive</option>
+    </select>
+</div>
+        <div class="form-group">
+            <label class="form-label">Brand</label>
+            <input type="text" class="form-input" id="addDeviceBrand" placeholder="e.g. Sonoff, Tuya">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Category</label>
+            <select class="form-input" id="addDeviceCategory">
+                <option value="switch">Smart Switches</option>
+                <option value="sensor">Sensors & Actuators</option>
+                <option value="camera">Cameras</option>
+                <option value="curtain">Smart Curtains</option>
+                <option value="lock">Smart Locks</option>
+                <option value="hub">Gateway Hub</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Supplier</label>
+            <input type="text" class="form-input" id="addDeviceSupplier">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Protocol</label>
+            <input type="text" class="form-input" id="addDeviceProtocol">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Price (EGP)</label>
+            <input type="number" class="form-input" id="addDevicePrice">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Group</label>
+            <select class="form-input" id="addDeviceGroup">
+                <option value="1">Group 1</option>
+                <option value="2">Group 2</option>
+                <option value="3">Group 3</option>
+                <option value="4">Group 4</option>
+                <option value="5">Group 5</option>
+                <option value="6">Group 6</option>
+                <option value="7">Group 7</option>
+                <option value="8">Group 8</option>
+                <option value="9">Group 9</option>
+                <option value="10">Group 10</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Coverage (m)</label>
+            <input type="number" class="form-input" id="addDeviceCoverage">
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="saveNewDevice()">Save Device</button>
+        <button class="btn btn-secondary" style="width:100%; margin-top:10px;" onclick="closeAddDeviceModal()">Cancel</button>
+    </div>
+</div>
+
+<div id="editDeviceModal" class="modal">
+    <div class="modal-content">
+        <h3 style="color: white; margin-bottom: 20px;">Edit Device</h3>
+        
+        <div class="form-group">
+            <label class="form-label">Device Name</label>
+            <input type="text" class="form-input" id="editDeviceName">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Brand</label>
+            <input type="text" class="form-input" id="editDeviceBrand">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Category</label>
+            <select class="form-input" id="editDeviceCategory">
+                <option value="switch">Smart Switches</option>
+                <option value="sensor">Sensors</option>
+                <option value="camera">Cameras</option>
+                <option value="curtain">Curtains</option>
+                <option value="hub">Hubs</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Supplier</label>
+            <input type="text" class="form-input" id="editDeviceSupplier">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Protocol</label>
+            <input type="text" class="form-input" id="editDeviceProtocol">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Price (EGP)</label>
+            <input type="number" class="form-input" id="editDevicePrice">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Group</label>
+            <select class="form-input" id="editDeviceGroup">
+                <option value="1">Group 1</option>
+                <option value="2">Group 2</option>
+                <option value="3">Group 3</option>
+                <option value="4">Group 4</option>
+                <option value="5">Group 5</option>
+                <option value="6">Group 6</option>
+                <option value="7">Group 7</option>
+                <option value="8">Group 8</option>
+                <option value="9">Group 9</option>
+                <option value="10">Group 10</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Coverage (m)</label>
+            <input type="number" class="form-input" id="editDeviceCoverage">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Status</label>
+            <select class="form-input" id="editDeviceStatus">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+            </select>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%" onclick="saveEditedDevice()">Update Changes</button>
+        <button class="btn btn-secondary" style="width:100%; margin-top:10px;" onclick="document.getElementById('editDeviceModal').classList.remove('active')">Cancel</button>
+    </div>
+</div>
+    <button class="btn btn-secondary" onclick="goToDashboard()">Back to Dashboard</button>
+</div>
     </div>
 
     <!-- ===== SETTINGS MODAL ===== -->
@@ -206,6 +386,16 @@
                 <label class="form-label">Supplier</label>
                 <input type="text" class="form-input" id="newDeviceSupplier" placeholder="e.g., Local Distributor">
             </div>
+            <div class="form-group">
+                <label class="form-label">Device Group</label>
+                <input type="text" class="form-input" id="addDeviceGroup" placeholder="e.g. Group A">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Coverage Radius (m)</label>
+                <input type="number" class="form-input" id="addDeviceCoverage" step="0.1" value="0">
+            </div>
+
+
 
             <button class="btn btn-primary" onclick="addNewDevice()">Add Device</button>
             <button class="btn btn-secondary" onclick="closeAddDeviceModal()">Cancel</button>
@@ -242,6 +432,15 @@
                 <label class="form-label">Supplier</label>
                 <input type="text" class="form-input" id="editDeviceSupplier">
             </div>
+            <div class="form-group">
+<div class="form-group">
+    <label class="form-label">Device Group</label>
+    <input type="text" class="form-input" id="editDeviceGroup">
+</div>
+<div class="form-group">
+    <label class="form-label">Coverage Radius (m)</label>
+    <input type="number" class="form-input" id="editDeviceCoverage" step="0.1">
+</div>
 
             <button class="btn btn-primary" onclick="saveEditedDevice()">Save Changes</button>
             <button class="btn btn-secondary" onclick="closeEditDeviceModal()">Cancel</button>
@@ -295,7 +494,7 @@
     
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";// Add getDocs to your imports
+import { getFirestore, doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";// Add getDocs to your imports
 const firebaseConfig = {
     apiKey: "AIzaSyBKCQFB0shdoDWCEpxfGVvuJpg8e1OzBh4",
     authDomain: "housbot-eb8b9.firebaseapp.com",
@@ -307,9 +506,21 @@ const firebaseConfig = {
 //  Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
+// Add this inside your Firebase module script in index.html
+window.addEventListener('message', async (event) => {
+    if (event.data.type === 'SAVE_ARCH') {
+        const { propertyId, data } = event.data;
+        try {
+            const docRef = doc(window.db, "properties", propertyId);
+            await updateDoc(docRef, { architectureLayout: data });
+            console.log("Architecture saved successfully!");
+        } catch (e) {
+            console.error("Firebase save failed:", e);
+        }
+    }
+});
 window.db = db;
-window.fbMethods = { doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs };</script>
+window.fbMethods = { doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs, getDoc };</script>
 
 <script src="data.js"></script>
 <script src="app.js"></script>

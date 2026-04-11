@@ -131,6 +131,11 @@ const DEFAULT_DEVICES_LIST = [
 let devicesDatabase = [];
 // Properties Database
 let propertiesDatabase = [];
+let groupColors = {
+    1: '#f1c40f', 2: '#3498db', 3: '#e67e22',
+    4: '#9b59b6', 5: '#e74c3c', 6: '#1abc9c',
+    7: '#ff4757', 8: '#2ecc71', 9: '#00d4ff', 10: '#ffffff'
+};
 async function seedDevicesOnce() {
     const checkFirebase = setInterval(async () => {
         if (window.fbMethods && window.fbMethods.addDoc) {
@@ -231,18 +236,37 @@ function getNextRoomId() {
 
 // Function to start syncing with Firebase
 function initFirebaseSync() {
-    const { collection, onSnapshot } = window.fbMethods;
+    if (!window.fbMethods || !window.db) {
+        console.warn("Firebase methods not ready. Retrying initFirebaseSync...");
+        setTimeout(initFirebaseSync, 1000);
+        return;
+    }
+    const { collection, onSnapshot, doc } = window.fbMethods;
 
     // Listen for Devices changes
-    onSnapshot(collection(window.db, "devices"), (snapshot) => {
-        devicesDatabase = snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
-        if (typeof renderDevicesList === 'function') renderDevicesList();
+ onSnapshot(collection(window.db, "devices"), (snap) => {
+    devicesDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+    
+    // Refresh standard UI
+    if (typeof renderDevicesList === 'function') renderDevicesList();
+    
+    // FIX: Refresh Admin UI automatically when data changes
+    if (document.getElementById('adminPage').classList.contains('active')) {
+        renderAdminDevices();
+    }
+});
+    // Listen for Properties changes
+    onSnapshot(collection(window.db, "properties"), (snap) => {
+        propertiesDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+        if (typeof renderDashboard === 'function') renderDashboard();
     });
 
-    // Listen for Properties changes
-    onSnapshot(collection(window.db, "properties"), (snapshot) => {
-        propertiesDatabase = snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
-        if (typeof renderDashboard === 'function') renderDashboard();
+    // Listen for Group Colors changes
+    onSnapshot(doc(window.db, "settings", "groupColors"), (snap) => {
+        if (snap.exists()) {
+            groupColors = snap.data();
+            if (typeof renderGroupColorSettings === 'function') renderGroupColorSettings();
+        }
     });
 }
 

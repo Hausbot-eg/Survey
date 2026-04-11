@@ -186,12 +186,18 @@ async function saveEditedProperty() {
     }
 }
 
-function deleteProperty(propertyId) {
+async function deleteProperty(propertyId) {
     if (confirm('Are you sure you want to delete this property and all its data?')) {
-        propertiesDatabase = propertiesDatabase.filter(p => p.id !== propertyId);
-        saveDataToLocalStorage();
-        renderDashboard();
-        alert('Property deleted successfully!');
+        const { doc, deleteDoc } = window.fbMethods;
+        try {
+            const propertyRef = doc(window.db, "properties", propertyId);
+            await deleteDoc(propertyRef);
+            // Dashboard will auto-update because of onSnapshot in data.js
+            alert('Property deleted successfully!');
+        } catch (e) {
+            console.error("Delete failed:", e);
+            alert("Failed to delete from Cloud.");
+        }
     }
 }
 
@@ -422,7 +428,8 @@ async function addNewRoomToProperty() {
         alert("Failed to save room to Cloud.");
     }
 }
-function updateDeviceQuantity(roomId, deviceId, newQuantity) {
+async function updateDeviceQuantity(roomId, deviceId, newQuantity) {
+    const { doc, updateDoc } = window.fbMethods;
     const property = getPropertyById(currentPropertyId);
     const room = property.rooms.find(r => r.id === roomId);
     const roomDevice = room.devices.find(d => d.deviceId === deviceId);
@@ -434,13 +441,22 @@ function updateDeviceQuantity(roomId, deviceId, newQuantity) {
         } else {
             roomDevice.quantity = qty;
         }
-        saveDataToLocalStorage();
-        renderDeviceCategories(property);
-        renderCurrentRoom(property);
-        
-        // Update property total
-        const totalCost = calculatePropertyTotal(property);
-        document.getElementById('propertyTotalCost').textContent = totalCost.toLocaleString() + ' EGP';
+
+        try {
+            const propertyRef = doc(window.db, "properties", currentPropertyId);
+            await updateDoc(propertyRef, {
+                rooms: property.rooms
+            });
+
+            renderDeviceCategories(property);
+            renderCurrentRoom(property);
+            
+            // Update property total
+            const totalCost = calculatePropertyTotal(property);
+            document.getElementById('propertyTotalCost').textContent = totalCost.toLocaleString() + ' EGP';
+        } catch (e) {
+            console.error("Update quantity failed:", e);
+        }
     }
 }
 async function removeDeviceFromRoom(roomId, deviceId) {
@@ -1051,48 +1067,13 @@ async function addNewDevice() {
     }
 }
 
-function openEditDeviceModal(deviceId) {
-    const device = getDeviceById(deviceId);
-    if (!device) return;
-
-    editingDeviceId = deviceId;
-    document.getElementById('editDeviceName').value = device.name;
-    document.getElementById('editDevicePrice').value = device.price;
-    document.getElementById('editDeviceBrand').value = device.brand;
-    document.getElementById('editDeviceProtocol').value = device.protocol;
-    document.getElementById('editDeviceSupplier').value = device.supplier;
-
-    document.getElementById('editDeviceModal').classList.add('active');
-}
 
 function closeEditDeviceModal() {
     document.getElementById('editDeviceModal').classList.remove('active');
     editingDeviceId = null;
 }
 
-async function saveEditedDevice() {
-    if (!editingDeviceId) return;
-    const { doc, updateDoc } = window.fbMethods;
 
-    const name = document.getElementById('editDeviceName').value.trim();
-    const price = parseFloat(document.getElementById('editDevicePrice').value) || 0;
-
-    try {
-        const deviceRef = doc(window.db, "devices", editingDeviceId);
-        await updateDoc(deviceRef, {
-            name: name,
-            price: price,
-            brand: document.getElementById('editDeviceBrand').value.trim(),
-            protocol: document.getElementById('editDeviceProtocol').value.trim(),
-            supplier: document.getElementById('editDeviceSupplier').value.trim()
-        });
-
-        closeEditDeviceModal();
-        alert('Device updated in Cloud!');
-    } catch (e) {
-        console.error("Error updating device:", e);
-    }
-}
 
 function deleteDevice(deviceId) {
     if (confirm('Are you sure you want to delete this device?')) {
@@ -1184,3 +1165,383 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     console.log('Smart Home Survey App Initialized with Central DB');
 });
+function goToAdmin() {
+    showPage('adminPage');
+    renderAdminDevices();
+    renderGroupColorSettings();
+}
+
+function renderGroupColorSettings() {
+    const container = document.getElementById('groupColorsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    for (let i = 1; i <= 10; i++) {
+        const color = groupColors[i] || '#ffffff';
+        const card = document.createElement('div');
+        card.className = 'group-color-card';
+        card.innerHTML = `
+            <div class="group-label">Group ${i}</div>
+            <div class="color-preview-circle" style="background-color: ${color}">
+                <input type="color" id="groupColorInput-${i}" value="${color}" onchange="this.parentElement.style.backgroundColor = this.value; this.parentElement.nextElementSibling.innerText = this.value.toUpperCase()">
+            </div>
+            <div class="hex-label">${color.toUpperCase()}</div>
+        `;
+        container.appendChild(card);
+    }
+}
+
+async function saveGroupColors() {
+    const newColors = {};
+    for (let i = 1; i <= 10; i++) {
+        newColors[i] = document.getElementById(`groupColorInput-${i}`).value;
+    }
+
+    const { doc, setDoc } = window.fbMethods;
+    try {
+        await setDoc(doc(window.db, "settings", "groupColors"), newColors);
+        alert("Group colors saved to Firebase!");
+    } catch (e) {
+        console.error("Error saving group colors:", e);
+        alert("Failed to save group colors.");
+    }
+}
+
+
+
+
+
+
+// --- 1. RENDER TABLE WITH ALL DATA ---
+function renderAdminDevices() {
+    const list = document.getElementById('adminDevicesList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    devicesDatabase.forEach(device => {
+        let dateDisplay = 'New';
+        const rawDate = device.createdDate || device.createdAt || device.date;
+
+        if (rawDate) {
+            let d;
+
+            // 1. Handle Firebase Timestamp Object {seconds, nanoseconds}
+            if (rawDate && typeof rawDate === 'object' && typeof rawDate.toDate === 'function') {
+                d = rawDate.toDate();
+            } 
+            // 2. Handle JS Date Object or ISO String
+            else if (rawDate instanceof Date || !isNaN(Date.parse(rawDate))) {
+                d = new Date(rawDate);
+            }
+            // 3. Handle the "Legacy" String Format: "February 24, 2026 at..."
+            else {
+                let cleaned = String(rawDate)
+                    .replace(' at ', ' ')
+                    .split(' UTC')[0]
+                    .replace(/\u202F/g, ' '); 
+                d = new Date(cleaned);
+            }
+
+            // Final check to see if we got a valid date
+            dateDisplay = (d && !isNaN(d.getTime())) ? d.toLocaleDateString() : 'Legacy';
+        }
+
+        const status = device.status || 'Active';
+        const statusClass = status === 'Active' ? 'status-active' : 'status-inactive';
+
+        const row = document.createElement('tr');
+        row.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+        row.innerHTML = `
+            <td style="padding: 15px 10px;">
+                <strong style="color:var(--primary-color)">${device.name || 'Unnamed'}</strong><br>
+                <small style="opacity:0.7">${device.brand || '—'} | ${device.supplier || '—'}</small>
+            </td>
+            <td>${device.category || 'switch'}</td>
+            <td style="text-align: center;">
+                <span style="background: ${groupColors[device.group] || '#555'}; color: #000; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold;">
+                    G${device.group || 1}
+                </span>
+            </td>
+            <td>${device.protocol || '—'}</td>
+            <td style="color: #4cd137; font-weight: bold;">${device.price || 0} EGP</td>
+            <td><span class="status-pill ${statusClass}">${status}</span></td>
+            <td>${device.coverage || 0}m</td>
+            <td style="font-size: 0.8rem; opacity: 0.6;">${dateDisplay}</td>
+            <td style="text-align: center;">
+                <button class="btn-settings" onclick="openEditDeviceModal('${device.firebaseId}')">✏️</button>
+                <button class="btn-settings" style="background: rgba(255, 71, 87, 0.2);" onclick="deleteDeviceFromAdmin('${device.firebaseId}')">🗑️</button>
+            </td>
+        `;
+        list.appendChild(row);
+    });
+}
+
+// --- 2. SAVE NEW DEVICE (Capturing Date & Status) ---
+async function saveNewDevice() {
+    const data = {
+        name: document.getElementById('addDeviceName').value,
+        brand: document.getElementById('addDeviceBrand').value,
+        category: document.getElementById('addDeviceCategory').value,
+        supplier: document.getElementById('addDeviceSupplier').value,
+        protocol: document.getElementById('addDeviceProtocol').value,
+        price: parseFloat(document.getElementById('addDevicePrice').value) || 0,
+        group: parseInt(document.getElementById('addDeviceGroup').value) || 1,
+        coverage: parseFloat(document.getElementById('addDeviceCoverage').value) || 0,
+        status: document.getElementById('addDeviceStatus').value,
+        createdDate: new Date().toISOString() // This ensures the date is valid
+    };
+
+    if (!data.name) return alert("Name is required");
+
+    const { collection, addDoc } = window.fbMethods;
+    try {
+        await addDoc(collection(window.db, "devices"), data);
+        closeAddDeviceModal();
+    } catch (e) { console.error(e); }
+}
+// --- 3. FETCH DATA (Including Status) ---
+// Ensure this is NOT inside another function or DOMContentLoaded
+function openEditDeviceModal(firebaseId) {
+    const device = devicesDatabase.find(d => d.firebaseId === firebaseId);
+    if (!device) return;
+
+    currentEditingDeviceId = firebaseId;
+
+    // Helper function to prevent "Cannot set properties of null" errors
+    const safeSet = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = value || '';
+        } else {
+            console.warn(`Element with ID ${id} was not found in HTML.`);
+        }
+    };
+
+    // Now we set all fields safely
+    safeSet('editDeviceName', device.name);
+    safeSet('editDeviceBrand', device.brand);
+    safeSet('editDeviceCategory', device.category);
+    safeSet('editDeviceSupplier', device.supplier);
+    safeSet('editDeviceProtocol', device.protocol);
+    safeSet('editDevicePrice', device.price);
+    safeSet('editDeviceGroup', device.group);
+    safeSet('editDeviceCoverage', device.coverage);
+    safeSet('editDeviceStatus', device.status || 'Active');
+
+    document.getElementById('editDeviceModal').classList.add('active');
+}
+// --- SAVE EDITED ---
+async function saveEditedDevice() {
+    const { doc, updateDoc } = window.fbMethods;
+    const updatedData = {
+        name: document.getElementById('editDeviceName').value,
+        brand: document.getElementById('editDeviceBrand').value,
+        category: document.getElementById('editDeviceCategory').value,
+        supplier: document.getElementById('editDeviceSupplier').value,
+        protocol: document.getElementById('editDeviceProtocol').value,
+        price: parseFloat(document.getElementById('editDevicePrice').value) || 0,
+        group: parseInt(document.getElementById('editDeviceGroup').value) || 1,
+        coverage: parseFloat(document.getElementById('editDeviceCoverage').value) || 0
+    };
+    await updateDoc(doc(window.db, "devices", currentEditingDeviceId), updatedData);
+    document.getElementById('editDeviceModal').classList.remove('active');
+}
+async function deleteDeviceFromAdmin(firebaseId) {
+    if (!firebaseId) return;
+    
+    if (confirm("Delete this device from the central database?")) {
+        const { doc, deleteDoc } = window.fbMethods;
+        try {
+            await deleteDoc(doc(window.db, "devices", firebaseId));
+            // renderAdminDevices will auto-fire due to onSnapshot in data.js
+        } catch (e) {
+            console.error("Delete failed:", e);
+        }
+    }
+}
+// Global Send Data function to handle child window requests
+async function fetchAndSendArchitectureData(targetId, targetWindow = null) {
+    if (!window.fbMethods || !window.db) {
+        console.warn("[PARENT] Firebase not ready. Retrying...");
+        setTimeout(() => fetchAndSendArchitectureData(targetId, targetWindow), 1000);
+        return;
+    }
+
+    const { doc, getDoc } = window.fbMethods;
+    let savedLayout = null;
+    
+    console.log(`[PARENT] Fetching architecture for property: ${targetId}`);
+
+    try {
+        // 1. Force fetch from architectures collection
+        const archRef = doc(window.db, "architectures", targetId);
+        const archSnap = await getDoc(archRef);
+        
+        if (archSnap.exists()) {
+            savedLayout = archSnap.data();
+        } else {
+            const propRef = doc(window.db, "properties", targetId);
+            const propSnap = await getDoc(propRef);
+            if (propSnap.exists()) {
+                const propData = propSnap.data();
+                savedLayout = propData.architectLayout || propData.architectureLayout;
+            }
+        }
+    } catch (e) {
+        console.error("Firebase fetch failed:", e);
+    }
+
+    // If no layout was found, ONLY create a "Full Structure" if we are CERTAIN it's new
+    if (!savedLayout) {
+        savedLayout = {
+            allArchitectures: [],
+            vertices: [],
+            placedDevices: [],
+            textLabels: [],
+            isClosed: false,
+            lastUpdated: new Date().toISOString()
+        };
+    } else {
+        // Ensure all arrays exist even if we loaded a partial layout
+        if (!savedLayout.allArchitectures) savedLayout.allArchitectures = [];
+        if (!savedLayout.vertices) savedLayout.vertices = [];
+        if (!savedLayout.placedDevices) savedLayout.placedDevices = [];
+        if (!savedLayout.textLabels) savedLayout.textLabels = [];
+    }
+
+    // Get property details
+    let selectedProperty = propertiesDatabase.find(p => p.firebaseId === targetId);
+    
+    // Fallback: Fetch devices if database is empty (e.g. on fresh reload)
+    if (!devicesDatabase || devicesDatabase.length === 0) {
+        console.log("[PARENT] Devices database empty, fetching from Firebase...");
+        try {
+            const { collection, getDocs } = window.fbMethods;
+            const devSnap = await getDocs(collection(window.db, "devices"));
+            devicesDatabase = devSnap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+        } catch (e) {
+            console.error("[PARENT] Failed to fetch devices fallback:", e);
+        }
+    }
+
+    // Fallback: Fetch group colors if empty
+    if (!groupColors || Object.keys(groupColors).length === 0) {
+        try {
+            const colorSnap = await getDoc(doc(window.db, "settings", "groupColors"));
+            if (colorSnap.exists()) groupColors = colorSnap.data();
+        } catch (e) {}
+    }
+
+    try {
+        const propRef = doc(window.db, "properties", targetId);
+        const propSnap = await getDoc(propRef);
+        if (propSnap.exists()) {
+            selectedProperty = { firebaseId: propSnap.id, ...propSnap.data() };
+        }
+    } catch (e) {}
+
+    const payload = {
+        type: 'INIT_DATA',
+        devices: devicesDatabase,    
+        property: selectedProperty,  
+        propertyId: targetId,
+        groupColors: groupColors,
+        savedLayout: savedLayout 
+    };
+
+    if (targetWindow && !targetWindow.closed) {
+        console.log("[PARENT] postMessage to requester window.");
+        targetWindow.postMessage(payload, '*');
+    } else if (window.currentArchitectWindow && !window.currentArchitectWindow.closed) {
+        console.log("[PARENT] postMessage to tracked architect window.");
+        window.currentArchitectWindow.postMessage(payload, '*');
+    }
+}
+
+// Inside app.js
+function openArchitectTool() {
+    if (!currentPropertyId) {
+        alert("Please select a property first.");
+        return;
+    }
+
+    // CRITICAL: Open window immediately to avoid popup blockers
+    const architectWindow = window.open(`coverage.html?propertyId=${currentPropertyId}`, '_blank');
+    if (!architectWindow) {
+        alert("Popup blocked! Please allow popups for this site.");
+        return;
+    }
+
+    window.currentArchitectWindow = architectWindow;
+    window.currentArchitectSendData = fetchAndSendArchitectureData;
+
+    // Trigger initial data send
+    setTimeout(() => {
+        if (architectWindow && !architectWindow.closed) {
+            console.log("[PARENT] Initial fetch for architect window...");
+            fetchAndSendArchitectureData(currentPropertyId, architectWindow);
+        }
+    }, 2500); // Increased timeout to ensure Firestore has time to return data
+}
+
+// Global Message Listener (Moved outside openArchitectTool)
+window.addEventListener('message', async (event) => {
+    const isReadyRequest = event.data === 'READY_FOR_DATA' || (event.data && event.data.type === 'READY_FOR_DATA');
+    
+    if (isReadyRequest) {
+        const requestedId = event.data.propertyId || currentPropertyId;
+        console.log(`[PARENT] READY_FOR_DATA received for ID: ${requestedId}`);
+        
+        // Use global function to send data to the requester
+        fetchAndSendArchitectureData(requestedId, event.source);
+    } else if (event.data.type === 'SAVE_LAYOUT') {
+        const { doc, setDoc } = window.fbMethods;
+        const targetId = event.data.propertyId || currentPropertyId;
+        
+        if (!targetId) {
+            console.error("[PARENT] No property ID provided for save!");
+            return;
+        }
+
+        try {
+            console.log(`[PARENT] Saving layout to architectures/${targetId}...`);
+            const archRef = doc(window.db, "architectures", targetId);
+            const layoutToSave = {
+                ...event.data.layout,
+                lastUpdated: new Date().toISOString()
+            };
+            
+            await setDoc(archRef, layoutToSave);
+            console.log("[PARENT] Layout saved successfully to Firebase architectures collection!");
+            
+            // CRITICAL: Update the global propertiesDatabase in memory as well
+            const prop = propertiesDatabase.find(p => p.firebaseId === targetId);
+            if (prop) {
+                prop.architectLayout = layoutToSave;
+                console.log("[PARENT] Local propertiesDatabase updated for ID:", targetId);
+            }
+
+        } catch (e) {
+            console.error("[PARENT] Save to Firebase failed:", e);
+            alert("Failed to save architecture to cloud. Check console for details.");
+        }
+    }
+});
+/**
+ * Cross-references property device data with master device data
+ * @param {string} deviceId - The ID stored in the property
+ * @returns {object} - The full device details including coverage
+ */
+function getFullDeviceDetails(deviceId) {
+    // Look through the master devices list we fetched from Firebase
+    const masterDevice = devicesDatabase.find(d => d.firebaseId === deviceId);
+    
+    if (masterDevice) {
+        return {
+            name: masterDevice.deviceName,
+            coverage: masterDevice.deviceCoverage || masterDevice.coverage || 0,
+            category: masterDevice.category
+        };
+    }
+    return { name: "Unknown", coverage: 0 };
+}

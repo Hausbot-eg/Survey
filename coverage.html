@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Architect Pro | Free Movement & Pan</title>
+<script src="https://cdn.jsdelivr.net/npm/konva@9.2.0/konva.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root { --primary: #00d4ff; --bg: #121212; --panel: #1e1e1e; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; display: flex; overflow: hidden; }
+    #sidebar { width: 300px; background: var(--panel); border-right: 1px solid #333; height: 100vh; padding: 15px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; z-index: 100; overflow-y: auto; transition: transform 0.3s ease; }
+    #container { flex-grow: 1; height: 100vh; background: #181818; cursor: crosshair; position: relative; }
+    .tool-group { background: #252525; padding: 10px; border-radius: 8px; border: 1px solid #333; flex-shrink: 0; }
+    h4 { margin: 0 0 8px 0; font-size: 0.75rem; color: var(--primary); text-transform: uppercase; }
+    button { background: #333; color: white; border: 1px solid #444; padding: 8px; cursor: pointer; border-radius: 4px; width: 100%; margin-bottom: 5px; text-align: left; font-size: 0.85rem; }
+    button.active { background: var(--primary); color: black; font-weight: bold; }
+    .distance-badge { background: var(--primary); color: black; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-family: monospace; }
+    .hint { font-size: 0.7rem; color: #777; margin-top: 2px; }
+    
+    /* Toast Styling */
+    .toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: var(--primary);
+        color: black;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: bold;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        z-index: 1000;
+        transform: translateY(100px);
+        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .toast.show { transform: translateY(0); }
+
+    /* Responsive Sidebar for Mobile */
+    @media (max-width: 768px) {
+        body { flex-direction: column; }
+        #sidebar { width: 100%; height: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid #333; }
+        #container { height: 60vh; }
+    }
+    
+    /* Responsive Scroll for Library */
+    #deviceLibrary { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 6px; 
+        max-height: 250px; 
+        overflow-y: auto; 
+        padding-right: 5px; 
+    }
+    
+    /* Scrollbar Styling */
+    #sidebar::-webkit-scrollbar, #deviceLibrary::-webkit-scrollbar { width: 5px; }
+    #sidebar::-webkit-scrollbar-thumb, #deviceLibrary::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
+        /* Ensure the device items allow clicking */
+.device-item {
+    cursor: pointer !important; /* Forces the pointer hand icon */
+    opacity: 1 !important;      /* Removes the "faded" look */
+    pointer-events: auto !important; /* Ensures it registers clicks */
+}
+
+/* Optional: Add a hover effect so you know it's clickable */
+.device-item:hover {
+    background: #333;
+    border-color: var(--primary);
+}
+    </style>
+
+</head>
+<body>
+
+<div id="sidebar">
+    <div style="margin-bottom: 5px;">
+        <h2 id="property-title-display" style="color: var(--primary); margin: 0; font-size: 1.4rem; line-height: 1.2; text-transform: capitalize;">Architect Pro</h2>
+        <div style="font-size: 0.7rem; color: #888; margin-top: 4px;">Blueprint Design Mode</div>
+    </div>
+    <p class="hint">Wheel: Zoom | Space+Drag: Pan</p>
+
+    <div class="tool-group">
+        <h4>Construction</h4>
+        <button id="btn-wall" class="active" onclick="setMode('wall')">✏️ Draw Walls</button>
+        <button id="btn-edit" onclick="setMode('edit')">📏 Edit Walls</button>
+        <button id="btn-text" onclick="setMode('text')">🔤 Add Label</button>
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; background: #333; padding: 8px; border-radius: 4px;">
+            <input type="checkbox" id="snap-toggle" checked style="width: 20px; height: 20px; cursor: pointer;">
+            <label for="snap-toggle" style="font-size: 0.8rem; cursor: pointer;">🧲 Magnetic Snap</label>
+        </div>
+    </div>
+
+    <div id="edit-panel" class="tool-group" style="display:none">
+        <h4>Wall Properties</h4>
+        <label style="font-size:0.8rem">Length (meters):</label>
+        <input type="number" id="wall-len-input" step="0.01" style="background:#121212; color:var(--primary); border:1px solid #444; padding:8px; width:90%; margin-top:5px;">
+        <button style="margin-top:10px; background:var(--primary); color:black;" onclick="applyLength()">Update Length</button>
+    </div>
+
+<div class="tool-group">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h4 style="margin:0;">Device Library</h4>
+    </div>
+    
+    <p style="font-size: 0.7rem; opacity: 0.6; margin-bottom: 8px;">Click a device to select (Stock aware)</p>
+    <div id="deviceLibrary" style="display: flex; flex-direction: column; gap: 8px; max-height: 350px; overflow-y: auto; padding-right: 5px;">
+</div>
+</div>
+
+    <div class="tool-group" style="margin-top: auto;">
+        <button onclick="saveLayoutToFirebase()" style="background: #2ecc71; color: white; margin-bottom: 8px; font-weight: bold;">💾 Save Layout</button>
+        <button id="btn-pdf" onclick="generateBlueprintPDF()" style="background: #00d4ff; color: #0a0e14; margin-bottom: 8px; font-weight: bold;">📄 Generate PDF Report</button>
+        <button onclick="window.close()" style="background: #e74c3c; color: white;">❌ Close</button>
+    </div>
+</div>
+
+<div id="toast" class="toast">Layout Saved!</div>
+
+<div id="container"></div>
+<script>
+    // ===== 1. DATABASE & URL INTEGRATION =====
+    const urlParams = new URLSearchParams(window.location.search);
+    const propertyId = urlParams.get('propertyId');
+
+    const CATEGORY_COLORS = {
+        switch: '#f1c40f', sensor: '#3498db', camera: '#e67e22',
+        curtain: '#9b59b6', lock: '#e74c3c', hub: '#1abc9c',
+        sound: '#ff4757', ir: '#2ecc71'
+    };
+
+    // ===== 2. STATE MANAGEMENT =====
+    const SCALE = 50; 
+    const SNAP_THRESHOLD = 15;
+    
+    let stage, contentLayer, uiLayer, wallLayer, vertexLayer, gridLayer, previewLayer, deviceLayer, textLayer, roomFillLayer;
+    let mode = 'wall'; 
+    let allArchitectures = []; // Array of { vertices: [], isClosed: boolean }
+    let vertices = []; // Current active architecture vertices
+    let placedDevices = []; 
+    let textLabels = []; 
+    let devicesFromParent = []; 
+    let groupColorsFromParent = {}; 
+    let selectedDeviceToPlace = null; 
+    let selectedWallIndex = null;
+    let isClosed = false;
+    let isPanning = false;
+    let currentPropertyData = null;
+    let dataLoadedOnce = false; // Guard for auto-save
+
+function getPropertyQuantity(masterDeviceId) {
+    if (!currentPropertyData || !currentPropertyData.rooms) return 0;
+    
+    let total = 0;
+    // Loop through each room in the property
+    currentPropertyData.rooms.forEach(room => {
+        if (room.devices) {
+            // Loop through each device in the room
+            room.devices.forEach(d => {
+                // Compare the ID from the room to the Master Device ID
+                // Note: check if your field is 'deviceId' or 'firebaseId'
+                if (d.deviceId === masterDeviceId || d.firebaseId === masterDeviceId) {
+                    total += parseInt(d.quantity || 0);
+                }
+            });
+        }
+    });
+    return total;
+}
+    // --- SECURE DATA BRIDGE ---
+    function requestDataSync() {
+        if (window.opener) {
+            try {
+                console.log("[CHILD] Requesting data from parent for property:", propertyId);
+                window.opener.postMessage({
+                    type: 'READY_FOR_DATA',
+                    propertyId: propertyId
+                }, '*');
+            } catch (e) {
+                console.error("[CHILD] Handshake failed (origin issue):", e);
+            }
+        } else {
+            console.error("[CHILD] Parent window not found!");
+        }
+    }
+
+    requestDataSync();
+
+    // Secondary handshake for file:// or slower loads
+    const handshakeInterval = setInterval(() => {
+        if (!currentPropertyData) {
+            requestDataSync();
+        } else {
+            clearInterval(handshakeInterval);
+        }
+    }, 2000);
+
+    // ===== 3. INITIALIZATION =====
+    function init() {
+        if (stage) return; // Prevent double init
+        
+        stage = new Konva.Stage({
+            container: 'container',
+            width: window.innerWidth - 300,
+            height: window.innerHeight
+        });
+
+        // Optimize: Use exactly 3 layers (Grid, Content, UI) to stop warnings
+        gridLayer = new Konva.Layer({ listening: false });
+        
+        // Content layer (Room fill + Walls + Devices + Text)
+        contentLayer = new Konva.Layer();
+        roomFillLayer = new Konva.Group({ listening: false });
+        wallLayer = new Konva.Group();
+        deviceLayer = new Konva.Group();
+        textLayer = new Konva.Group();
+        contentLayer.add(roomFillLayer, wallLayer, deviceLayer, textLayer);
+
+        // UI layer (Vertices + Preview + Handlers)
+        uiLayer = new Konva.Layer();
+        previewLayer = new Konva.Group({ listening: false });
+        vertexLayer = new Konva.Group();
+        uiLayer.add(previewLayer, vertexLayer);
+
+        stage.add(gridLayer, contentLayer, uiLayer);
+        drawGrid();
+
+        stage.on('mousedown', handleMouseDown);
+        stage.on('mousemove', handleMouseMove);
+        
+        // Zoom logic
+        stage.on('wheel', (e) => {
+            e.evt.preventDefault();
+            const oldScale = stage.scaleX();
+            const pointer = stage.getPointerPosition();
+            const mousePointTo = { x: (pointer.x - stage.x()) / oldScale, y: (pointer.y - stage.y()) / oldScale };
+            const newScale = e.evt.deltaY < 0 ? oldScale * 1.1 : oldScale / 1.1;
+            stage.scale({ x: newScale, y: newScale });
+            stage.position({ x: pointer.x - mousePointTo.x * newScale, y: pointer.y - mousePointTo.y * newScale });
+            drawGrid();
+            render(); 
+        });
+
+        initDeviceLibrary();
+        render(); // Always render once after init to show any loaded data
+    }
+
+    // --- AUTO SAVE LOGIC ---
+    let autoSaveTimer = null;
+    function triggerAutoSave() {
+        // PREVENT AUTO-SAVE IF DATA NOT LOADED OR NO CHANGES MADE
+        if (!dataLoadedOnce) {
+            console.warn("[CHILD] Auto-save blocked: Data not yet loaded from parent.");
+            return;
+        }
+        
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => {
+            console.log("[CHILD] Auto-saving layout...");
+            saveLayoutToFirebase(true); // silent save
+        }, 2000); 
+    }
+
+    // ===== 4. DEVICE & COVERAGE LOGIC =====
+
+  function getUsedCount(masterDeviceId) {
+    let count = 0;
+    placedDevices.forEach(d => {
+        if (String(d.firebaseId) === String(masterDeviceId)) {
+            count++;
+        }
+    });
+    return count;
+}
+
+    function updateSelectedCoverage(val) {
+        // Function no longer needed as override box is removed
+    }
+
+    async function saveLayoutToFirebase(isSilent = false) {
+        if (!propertyId) {
+            if (!isSilent) showToast("No property ID found!");
+            return;
+        }
+
+        if (!window.opener) {
+            console.error("[CHILD] window.opener not found!");
+            return;
+        }
+
+        const layoutData = {
+            allArchitectures: allArchitectures || [],
+            vertices: vertices || [],
+            isClosed: isClosed || false,
+            placedDevices: placedDevices || [],
+            textLabels: textLabels || [],
+            stageState: {
+                x: stage ? stage.x() : 0,
+                y: stage ? stage.y() : 0,
+                scale: stage ? stage.scaleX() : 1
+            },
+            lastUpdated: new Date().toISOString()
+        };
+
+        try {
+            window.opener.postMessage({
+                type: 'SAVE_LAYOUT',
+                propertyId: propertyId,
+                layout: layoutData
+            }, '*');
+            if (!isSilent) showToast("Layout Saved!");
+        } catch (e) {
+            console.error("Save error:", e);
+            if (!isSilent) showToast("Save Failed!");
+        }
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        if (!t) return;
+        t.innerText = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data.type === 'INIT_DATA') {
+            console.log("[CHILD] INIT_DATA received from parent.");
+            
+            // CRITICAL: Ensure stage is initialized before rendering
+            if (!stage) {
+                console.log("[CHILD] Stage not found, running init()...");
+                init();
+            }
+
+            // Stop pinging parent once data is received
+            if (typeof handshakeInterval !== 'undefined') clearInterval(handshakeInterval);
+            
+            devicesFromParent = event.data.devices || [];
+            currentPropertyData = event.data.property; 
+            groupColorsFromParent = event.data.groupColors || {};
+            
+            // Update Property Title Display
+            if (currentPropertyData && currentPropertyData.clientName) {
+                const titleEl = document.getElementById('property-title-display');
+                if (titleEl) titleEl.innerText = `${currentPropertyData.clientName} Blueprint`;
+            }
+            
+            // Load saved layout with extensive fallback checks
+            let layout = event.data.savedLayout;
+            
+            if (layout && typeof layout === 'object') {
+                console.log("[CHILD] Layout object received:", layout);
+                
+                const finalLayout = layout.layout || layout.architectureLayout || layout.architectLayout || layout;
+                
+                // Be extremely lenient: load if ANY of the major arrays are present
+                const hasVertices = Array.isArray(finalLayout.vertices) && finalLayout.vertices.length > 0;
+                const hasAllArch = Array.isArray(finalLayout.allArchitectures) && finalLayout.allArchitectures.length > 0;
+                const hasDevices = Array.isArray(finalLayout.placedDevices) && finalLayout.placedDevices.length > 0;
+                const hasLabels = Array.isArray(finalLayout.textLabels) && finalLayout.textLabels.length > 0;
+
+                // CRITICAL: Only mark data as loaded if we actually got content
+                if (hasVertices || hasAllArch || hasDevices || hasLabels) {
+                    console.log("[CHILD] Non-empty layout received. Restoring...");
+                    dataLoadedOnce = true; 
+                    
+                    allArchitectures = finalLayout.allArchitectures || [];
+                    vertices = finalLayout.vertices || [];
+                    isClosed = finalLayout.isClosed || false;
+                    placedDevices = finalLayout.placedDevices || [];
+                    textLabels = finalLayout.textLabels || [];
+                    
+                    // Restore Stage State (Zoom & Pan)
+                    if (finalLayout.stageState) {
+                        stage.position({ x: finalLayout.stageState.x, y: finalLayout.stageState.y });
+                        stage.scale({ x: finalLayout.stageState.scale, y: finalLayout.stageState.scale });
+                    } else {
+                        setTimeout(() => centerContent(), 500);
+                    }
+                } else {
+                    console.log("[CHILD] Received layout was empty. Not overwriting current state.");
+                    // If we haven't loaded data yet, we can allow manual drawing to save now
+                    if (!dataLoadedOnce) {
+                        console.log("[CHILD] This appears to be a new property. Allowing manual saves.");
+                        dataLoadedOnce = true;
+                    }
+                }
+            } else {
+                console.log("[CHILD] No layout object in INIT_DATA.");
+                dataLoadedOnce = true;
+            }
+            
+            initDeviceLibrary();
+            render(); 
+        }
+    });
+
+function initDeviceLibrary() {
+    const lib = document.getElementById('deviceLibrary');
+    if (!lib) return;
+    lib.innerHTML = '';
+
+    devicesFromParent.forEach(masterDev => {
+        const totalAllowed = Number(getPropertyQuantity(masterDev.firebaseId));
+        
+        if (totalAllowed > 0) {
+            const used = getUsedCount(masterDev.firebaseId);
+            const remaining = totalAllowed - used;
+
+            const btn = document.createElement('div');
+            btn.className = 'device-item-btn';
+            btn.style.padding = '8px';
+            btn.style.border = '1px solid #444';
+            btn.style.borderRadius = '4px';
+            btn.style.marginBottom = '5px';
+            btn.style.cursor = 'pointer';
+            
+            const isOutOfStock = remaining <= 0;
+
+            if (isOutOfStock) {
+                btn.style.opacity = "0.5";
+                btn.style.filter = "grayscale(1)";
+                btn.style.cursor = "not-allowed";
+            }
+            
+            btn.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${masterDev.name || 'Unnamed Device'}</strong>
+                    <span style="color: ${isOutOfStock ? '#ff4444' : '#00ff88'}">
+                        ${remaining} / ${totalAllowed}
+                    </span>
+                </div>
+                <small style="display:block; opacity:0.6;">${masterDev.brand || ''} | ${masterDev.coverage || masterDev.deviceCoverage || 0}m</small>
+            `;
+
+            btn.onclick = () => {
+                if (remaining <= 0) {
+                    alert("Quota reached for this property.");
+                    return;
+                }
+                selectedDeviceToPlace = masterDev;
+                setMode('device');
+                
+                document.querySelectorAll('.device-item-btn').forEach(b => b.style.background = "");
+                btn.style.background = "#333";
+            };
+            lib.appendChild(btn);
+        }
+    });
+}
+// Function to find how many of a specific device are allowed in this property
+function getAllowedQuantity(deviceFirebaseId) {
+    if (!currentPropertyData || !currentPropertyData.rooms) return 0;
+    
+    let total = 0;
+    currentPropertyData.rooms.forEach(room => {
+        if (room.devices) {
+            room.devices.forEach(d => {
+                // In your DB, this is stored as firebaseId and quantity
+                if (d.firebaseId === deviceFirebaseId) {
+                    total += parseInt(d.quantity || 0);
+                }
+            });
+        }
+    });
+    return total;
+}
+function renderPropertyDevices(property) {
+    // Assuming 'property.devices' is your array of {firebaseId, quantity}
+    property.devices.forEach(item => {
+        const details = getFullDeviceDetails(item.firebaseId);
+        
+        console.log(`Device: ${details.name}`);
+        console.log(`Quantity in this property: ${item.quantity}`);
+        console.log(`Individual Coverage: ${details.coverage}m`);
+        
+        // Total coverage for this device type in this property:
+        const totalPotentialCoverage = details.coverage * item.quantity;
+    });
+}
+    function handleMouseDown(e) {
+        if (isPanning) return;
+        let pos = getRelativePointerPosition();
+        pos = snapToPoint(pos); // Apply Magnetic Snap
+
+        if (mode === 'wall') {
+            // Check if we clicked near the start of the current shape to close it
+            if (vertices.length > 2) {
+                const firstV = vertices[0];
+                const dist = Math.sqrt(Math.pow(pos.x - firstV.x, 2) + Math.pow(pos.y - firstV.y, 2));
+                if (dist < SNAP_THRESHOLD / stage.scaleX()) {
+                    // Close this architecture and push it to allArchitectures
+                    allArchitectures.push({
+                        vertices: [...vertices],
+                        isClosed: true
+                    });
+                    vertices = []; // Clear current for next shape
+                    render();
+                    triggerAutoSave(); 
+                    return;
+                }
+            }
+            vertices.push(pos);
+            render();
+            triggerAutoSave();
+        } 
+        else if (mode === 'device' && selectedDeviceToPlace) {
+            // Correct stock check using getPropertyQuantity
+            const totalAllowed = Number(getPropertyQuantity(selectedDeviceToPlace.firebaseId));
+            const used = getUsedCount(selectedDeviceToPlace.firebaseId);
+
+            if (used >= totalAllowed) {
+                alert(`Out of stock! You only have ${totalAllowed} units of ${selectedDeviceToPlace.name} for this property.`);
+                return;
+            }
+
+            // Fixed coverage from master list
+            const fixedCov = selectedDeviceToPlace.coverage || selectedDeviceToPlace.deviceCoverage || 0;
+            
+            placedDevices.push({
+                firebaseId: selectedDeviceToPlace.firebaseId,
+                name: selectedDeviceToPlace.name || selectedDeviceToPlace.deviceName,
+                category: selectedDeviceToPlace.category,
+                brand: selectedDeviceToPlace.brand,
+                group: selectedDeviceToPlace.group || 1, // Store group
+                coverage: fixedCov,
+                x: pos.x,
+                y: pos.y,
+                instanceId: Date.now()
+            });
+            
+            initDeviceLibrary(); 
+            render();
+            triggerAutoSave();
+        }
+        else if (mode === 'text') {
+            const text = prompt("Enter label text:");
+            if (text) {
+                textLabels.push({
+                    text: text,
+                    x: pos.x,
+                    y: pos.y,
+                    fontSize: 20,
+                    id: Date.now()
+                });
+                render();
+                triggerAutoSave();
+            }
+        }
+    }
+
+    function handleMouseMove() {
+        if (isPanning) return;
+        previewLayer.destroyChildren();
+        let pos = getRelativePointerPosition();
+        pos = snapToPoint(pos); // Apply Magnetic Snap
+
+        if (mode === 'wall' && vertices.length > 0) {
+            const lastV = vertices[vertices.length - 1];
+            let targetPos = pos;
+            
+            if (vertices.length > 2) {
+                const firstV = vertices[0];
+                const dist = Math.sqrt(Math.pow(pos.x - firstV.x, 2) + Math.pow(pos.y - firstV.y, 2));
+                if (dist < SNAP_THRESHOLD / stage.scaleX()) targetPos = firstV;
+            }
+
+            const dx = targetPos.x - lastV.x;
+            const dy = targetPos.y - lastV.y;
+            const distance = Math.sqrt(dx*dx + dy*dy) / SCALE;
+
+            previewLayer.add(new Konva.Line({
+                points: [lastV.x, lastV.y, targetPos.x, targetPos.y],
+                stroke: '#00d4ff', strokeWidth: 2 / stage.scaleX(), dash: [10, 5]
+            }));
+
+            // Add distance label
+            const label = new Konva.Text({
+                x: (lastV.x + targetPos.x) / 2,
+                y: (lastV.y + targetPos.y) / 2 - 20 / stage.scaleX(),
+                text: distance.toFixed(2) + 'm',
+                fontSize: 14 / stage.scaleX(),
+                fill: '#00d4ff',
+                fontStyle: 'bold',
+                align: 'center'
+            });
+            previewLayer.add(label);
+            
+            // Update sidebar live distance
+            const liveDist = document.getElementById('live-dist');
+            if (liveDist) {
+                liveDist.innerHTML = `Distance: <span class="distance-badge">${distance.toFixed(2)}m</span>`;
+            }
+
+            uiLayer.batchDraw();
+        } 
+        else if (mode === 'device' && selectedDeviceToPlace) {
+            const color = groupColorsFromParent[selectedDeviceToPlace.group] || '#ffffff';
+            const liveCov = selectedDeviceToPlace.coverage || selectedDeviceToPlace.deviceCoverage || 0;
+            
+            previewLayer.add(new Konva.Circle({
+                x: pos.x, y: pos.y, radius: liveCov * SCALE,
+                fill: color, opacity: 0.1, listening: false
+            }));
+            uiLayer.batchDraw();
+        }
+    }
+
+    // ===== 5. RENDERING & DRAGGING =====
+    function render() {
+        if (!stage) {
+            return;
+        }
+        
+        roomFillLayer.destroyChildren();
+        wallLayer.destroyChildren();
+        deviceLayer.destroyChildren();
+        textLayer.destroyChildren();
+        vertexLayer.destroyChildren();
+        previewLayer.destroyChildren();
+
+        // 1. Draw all saved architectures
+        allArchitectures.forEach((arch, archIndex) => {
+            console.log(`[CHILD] Drawing Arch #${archIndex}: ${arch.vertices.length} vertices, closed: ${arch.isClosed}`);
+            
+            if (arch.isClosed && arch.vertices.length > 2) {
+                const points = [];
+                arch.vertices.forEach(v => points.push(Number(v.x), Number(v.y)));
+                
+                roomFillLayer.add(new Konva.Line({
+                    points: points,
+                    fill: 'rgba(0, 212, 255, 0.05)',
+                    closed: true,
+                    strokeEnabled: false
+                }));
+            }
+
+            const loopCount = arch.isClosed ? arch.vertices.length : arch.vertices.length - 1;
+            for (let i = 0; i < loopCount; i++) {
+                const p1 = arch.vertices[i];
+                const p2 = arch.vertices[(i + 1) % arch.vertices.length];
+                if (p1 && p2) {
+                    const x1 = Number(p1.x);
+                    const y1 = Number(p1.y);
+                    const x2 = Number(p2.x);
+                    const y2 = Number(p2.y);
+                    
+                    wallLayer.add(new Konva.Line({
+                        points: [x1, y1, x2, y2],
+                        stroke: arch.isClosed ? '#00d4ff' : 'white', 
+                        strokeWidth: 6 / stage.scaleX(),
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    }));
+
+                    const dx = x2 - x1;
+                    const dy = y2 - y1;
+                    const length = Math.sqrt(dx*dx + dy*dy) / SCALE;
+                    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+                    wallLayer.add(new Konva.Text({
+                        x: (x1 + x2) / 2,
+                        y: (y1 + y2) / 2,
+                        text: length.toFixed(2) + 'm',
+                        fontSize: 12 / stage.scaleX(),
+                        fill: '#aaa',
+                        rotation: angle > 90 || angle < -90 ? angle + 180 : angle,
+                        offset: { x: 15, y: 15 }
+                    }));
+                }
+            }
+
+            // Draw vertices for editing all architectures if in edit/wall mode
+            if (mode === 'edit' || mode === 'wall') {
+                arch.vertices.forEach((v, vIndex) => {
+                    const vCircle = new Konva.Circle({
+                        x: v.x, y: v.y, radius: 8 / stage.scaleX(),
+                        fill: "#555",
+                        draggable: true, stroke: 'white', strokeWidth: 2 / stage.scaleX()
+                    });
+                    
+                    vCircle.on('dragmove', () => { 
+                        arch.vertices[vIndex] = { x: vCircle.x(), y: vCircle.y() };
+                        redrawWallsOnly();
+                    });
+                    
+                    vCircle.on('dragend', () => { 
+                        render(); 
+                        triggerAutoSave();
+                    });
+                    vCircle.on('dblclick', () => {
+                        if (confirm("Remove this edge point?")) {
+                            arch.vertices.splice(vIndex, 1);
+                            if (arch.vertices.length < 3) {
+                                allArchitectures.splice(archIndex, 1);
+                            }
+                            render();
+                            triggerAutoSave();
+                        }
+                    });
+                    vertexLayer.add(vCircle);
+                });
+            }
+        });
+
+        // 2. Draw currently drawing architecture
+        if (vertices.length > 0) {
+            for (let i = 0; i < vertices.length - 1; i++) {
+                const p1 = vertices[i];
+                const p2 = vertices[i + 1];
+                if (p1 && p2) {
+                    wallLayer.add(new Konva.Line({
+                        points: [p1.x, p1.y, p2.x, p2.y],
+                        stroke: 'white', strokeWidth: 6 / stage.scaleX(),
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    }));
+                }
+            }
+            
+            if (mode === 'wall') {
+                vertices.forEach((v, index) => {
+                    vertexLayer.add(new Konva.Circle({
+                        x: v.x, y: v.y, radius: 8 / stage.scaleX(),
+                        fill: index === 0 ? "#00ff88" : "#555",
+                        stroke: 'white', strokeWidth: 2 / stage.scaleX()
+                    }));
+                });
+            }
+        }
+
+        // 3. Devices
+        placedDevices.forEach((dev, index) => {
+            const color = groupColorsFromParent[dev.group] || '#ffffff';
+            
+            const coverage = new Konva.Circle({
+                x: dev.x, y: dev.y, radius: (dev.coverage || 0) * SCALE,
+                fill: color, opacity: 0.15, listening: false
+            });
+
+            const icon = new Konva.Circle({
+                x: dev.x, y: dev.y, radius: 10 / stage.scaleX(),
+                fill: color, stroke: 'white', strokeWidth: 2 / stage.scaleX(),
+                draggable: true
+            });
+
+            const label = new Konva.Text({
+                x: dev.x,
+                y: dev.y + 15 / stage.scaleX(),
+                text: dev.name,
+                fontSize: 10 / stage.scaleX(),
+                fill: 'white',
+                align: 'center',
+                width: 100 / stage.scaleX(),
+                offsetX: 50 / stage.scaleX()
+            });
+
+            icon.on('dragmove', () => {
+                dev.x = icon.x();
+                dev.y = icon.y();
+                coverage.position(icon.position());
+                label.position({ x: dev.x, y: dev.y + 15 / stage.scaleX() });
+                contentLayer.batchDraw();
+            });
+            
+            icon.on('dragend', () => { 
+                render(); 
+                triggerAutoSave();
+            });
+
+            // Double click to delete device
+            icon.on('dblclick', () => {
+                const devName = dev.name;
+                if (confirm(`Remove ${devName}?`)) {
+                    placedDevices.splice(index, 1);
+                    render();
+                    initDeviceLibrary(); // Update stock in sidebar
+                    triggerAutoSave();
+                    showToast(`${devName} returned to stock`);
+                }
+            });
+
+            deviceLayer.add(coverage, icon, label);
+        });
+
+        // Text Labels
+        textLabels.forEach((labelData, index) => {
+            const text = new Konva.Text({
+                x: labelData.x,
+                y: labelData.y,
+                text: labelData.text,
+                fontSize: (labelData.fontSize || 20) / stage.scaleX(),
+                fill: 'white',
+                draggable: true,
+                padding: 5
+            });
+
+            text.on('dragend', () => {
+                labelData.x = text.x();
+                labelData.y = text.y();
+                triggerAutoSave();
+            });
+
+            // Double click to open edit menu (Delete or Change Font Size)
+            text.on('dblclick', () => {
+                const action = prompt("Type 'd' to delete, 's' to change font size, or 't' to change text:");
+                if (action === 'd') {
+                    if (confirm("Delete label?")) {
+                        textLabels.splice(index, 1);
+                        render();
+                        triggerAutoSave();
+                    }
+                } else if (action === 's') {
+                    const newSize = prompt("Enter new font size (e.g., 20, 30, 40):", labelData.fontSize || 20);
+                    if (newSize) {
+                        labelData.fontSize = parseInt(newSize);
+                        render();
+                        triggerAutoSave();
+                    }
+                } else if (action === 't') {
+                    const newText = prompt("Enter new text:", labelData.text);
+                    if (newText) {
+                        labelData.text = newText;
+                        render();
+                        triggerAutoSave();
+                    }
+                }
+            });
+
+            textLayer.add(text);
+        });
+
+        // Vertices
+        if (mode === 'edit' || mode === 'wall') {
+            vertices.forEach((v, index) => {
+                const vCircle = new Konva.Circle({
+                    x: v.x, y: v.y, radius: 8 / stage.scaleX(),
+                    fill: (index === 0 && !isClosed) ? "#00ff88" : "#555",
+                    draggable: true, stroke: 'white', strokeWidth: 2 / stage.scaleX()
+                });
+                
+                vCircle.on('dragmove', () => { 
+                    vertices[index] = { x: vCircle.x(), y: vCircle.y() };
+                    redrawWallsOnly();
+                });
+                
+                vCircle.on('dragend', () => { 
+                        render(); 
+                        triggerAutoSave();
+                    });
+                vertexLayer.add(vCircle);
+            });
+        }
+
+        console.log(`[CHILD] Render complete. Wall elements: ${wallLayer.getChildren().length}, Devices: ${deviceLayer.getChildren().length}`);
+        stage.batchDraw();
+    }
+
+    function redrawWallsOnly() {
+        wallLayer.destroyChildren();
+        roomFillLayer.destroyChildren();
+
+        // Draw all architectures
+        allArchitectures.forEach(arch => {
+            if (arch.isClosed && arch.vertices.length > 2) {
+                const points = [];
+                arch.vertices.forEach(v => points.push(v.x, v.y));
+                roomFillLayer.add(new Konva.Line({
+                    points: points,
+                    fill: 'rgba(0, 212, 255, 0.05)',
+                    closed: true,
+                    strokeEnabled: false
+                }));
+            }
+
+            const loopCount = arch.isClosed ? arch.vertices.length : arch.vertices.length - 1;
+            for (let i = 0; i < loopCount; i++) {
+                const p1 = arch.vertices[i];
+                const p2 = arch.vertices[(i + 1) % arch.vertices.length];
+                if (p1 && p2) {
+                    wallLayer.add(new Konva.Line({
+                        points: [p1.x, p1.y, p2.x, p2.y],
+                        stroke: arch.isClosed ? '#00d4ff' : 'white', 
+                        strokeWidth: 6 / stage.scaleX(),
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    }));
+                }
+            }
+        });
+
+        // Draw current vertices
+        if (vertices.length > 0) {
+            for (let i = 0; i < vertices.length - 1; i++) {
+                const p1 = vertices[i];
+                const p2 = vertices[i + 1];
+                if (p1 && p2) {
+                    wallLayer.add(new Konva.Line({
+                        points: [p1.x, p1.y, p2.x, p2.y],
+                        stroke: 'white', strokeWidth: 6 / stage.scaleX(),
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    }));
+                }
+            }
+        }
+
+        contentLayer.batchDraw();
+    }
+
+    function setMode(m) {
+        mode = m;
+        stage.container().style.cursor = (m === 'device') ? 'copy' : 'crosshair';
+        render();
+    }
+
+    function getRelativePointerPosition() {
+        const transform = stage.getAbsoluteTransform().copy().invert();
+        return transform.point(stage.getPointerPosition());
+    }
+
+    function snapToPoint(pos) {
+        if (!document.getElementById('snap-toggle').checked) return pos;
+        
+        const threshold = SNAP_THRESHOLD / stage.scaleX();
+        let bestPos = { x: pos.x, y: pos.y };
+        let minDistance = threshold;
+
+        // 1. Snap to Grid
+        const gridX = Math.round(pos.x / SCALE) * SCALE;
+        const gridY = Math.round(pos.y / SCALE) * SCALE;
+        const distToGridX = Math.abs(pos.x - gridX);
+        const distToGridY = Math.abs(pos.y - gridY);
+
+        if (distToGridX < minDistance) bestPos.x = gridX;
+        if (distToGridY < minDistance) bestPos.y = gridY;
+
+        // 2. Snap to existing vertices
+        vertices.forEach(v => {
+            const dist = Math.sqrt(Math.pow(pos.x - v.x, 2) + Math.pow(pos.y - v.y, 2));
+            if (dist < minDistance) {
+                minDistance = dist;
+                bestPos = { x: v.x, y: v.y };
+            }
+        });
+
+        return bestPos;
+    }
+
+    function centerContent() {
+        if (!stage || !contentLayer) return;
+        const box = contentLayer.getClientRect();
+        if (box.width > 0 && box.height > 0) {
+            const padding = 50;
+            const stageW = stage.width();
+            const stageH = stage.height();
+            const scale = Math.min(
+                (stageW - padding * 2) / box.width,
+                (stageH - padding * 2) / box.height,
+                1 // Don't zoom in too much
+            );
+            stage.scale({ x: scale, y: scale });
+            stage.position({
+                x: (stageW - box.width * scale) / 2 - box.x * scale,
+                y: (stageH - box.height * scale) / 2 - box.y * scale
+            });
+            drawGrid();
+            render();
+        }
+    }
+
+    function drawGrid() {
+        if (!stage || !gridLayer) return;
+        gridLayer.destroyChildren();
+        const s = stage.scaleX();
+        const xStart = -stage.x() / s;
+        const yStart = -stage.y() / s;
+        const xEnd = xStart + stage.width() / s;
+        const yEnd = yStart + stage.height() / s;
+
+        for (let i = Math.floor(xStart/SCALE)*SCALE; i < xEnd; i += SCALE) {
+            gridLayer.add(new Konva.Line({ points: [i, yStart, i, yEnd], stroke: '#333', strokeWidth: 1 / s }));
+        }
+        for (let j = Math.floor(yStart/SCALE)*SCALE; j < yEnd; j += SCALE) {
+            gridLayer.add(new Konva.Line({ points: [xStart, j, xEnd, j], stroke: '#333', strokeWidth: 1 / s }));
+        }
+        gridLayer.draw();
+    }
+
+    async function generateBlueprintPDF() {
+        if (!stage || !currentPropertyData) return;
+        const btn = document.getElementById('btn-pdf');
+        btn.disabled = true;
+        btn.innerText = "⏳ Generating...";
+
+        try {
+            // 1. Capture the FULL content bounding box
+            uiLayer.visible(false);
+            gridLayer.visible(false);
+            
+            // contentLayer.getClientRect() calculates the area occupied by all children
+            const box = contentLayer.getClientRect();
+            let dataUrl = "";
+            
+            if (box.width > 0 && box.height > 0) {
+                // We capture slightly larger than the bounding box for padding
+                const padding = 60; 
+                dataUrl = stage.toDataURL({
+                    pixelRatio: 2, // High quality
+                    x: box.x - padding,
+                    y: box.y - padding,
+                    width: box.width + padding * 2,
+                    height: box.height + padding * 2
+                });
+            }
+
+            uiLayer.visible(true);
+            gridLayer.visible(true);
+
+            // 2. Prepare the 3-page HTML Report
+            const generationDate = new Date().toLocaleDateString('en-GB', {
+                day: 'numeric', month: 'long', year: 'numeric'
+            });
+
+            // Financial Calculations
+            let hardwareSubtotal = 0;
+            currentPropertyData.rooms.forEach(room => {
+                room.devices.forEach(rd => {
+                    const dev = devicesFromParent.find(d => d.firebaseId === rd.deviceId);
+                    if (dev) hardwareSubtotal += (dev.price * rd.quantity);
+                });
+            });
+            const serviceFees = Math.max(3000, hardwareSubtotal * 0.10);
+            const finalProjectTotal = hardwareSubtotal + serviceFees;
+
+            const pageStyle = `
+                height: 209mm; 
+                width: 297mm; 
+                box-sizing: border-box; 
+                padding: 40px; 
+                position: relative; 
+                display: flex;
+                flex-direction: column;
+                background: #0a0e14;
+                color: white;
+                font-family: 'Segoe UI', sans-serif;
+                page-break-after: always;
+            `;
+
+            const cardStyle = `
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(0, 212, 255, 0.2);
+                border-radius: 12px;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+            `;
+
+            const container = document.createElement('div');
+            container.style.width = '297mm';
+            container.style.background = '#0a0e14';
+
+            container.innerHTML = `
+                <!-- PAGE 1: COVER -->
+                <div style="${pageStyle} justify-content: center; align-items: center;">
+                    <div style="width: 85%; border: 1.5px solid #00d4ff; border-radius: 20px; padding: 40px; background: radial-gradient(circle at center, #111827 0%, #0a0e14 100%);">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 150px; opacity: 0.8;">
+                        </div>
+                        <h1 style="color: #00d4ff; font-size: 3.2rem; text-align: center; text-transform: uppercase; letter-spacing: 12px; margin: 0; font-weight: 700;">SMART HOME SURVEY</h1>
+                        <p style="text-align: center; font-size: 1.1rem; opacity: 0.6; margin-bottom: 40px; letter-spacing: 2px;">Generated on ${generationDate}</p>
+                        <div style="height: 1px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent); margin-bottom: 30px;"></div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                            <div>
+                                <h3 style="color: #00d4ff; font-size: 1.2rem; margin-bottom: 10px; text-transform: uppercase;">Client Information</h3>
+                                <p style="font-size: 1.1rem; margin: 4px 0;"><strong>Name:</strong> ${currentPropertyData.clientName}</p>
+                                <p style="font-size: 1.1rem; margin: 4px 0;"><strong>Location:</strong> ${currentPropertyData.location || 'N/A'}</p>
+                            </div>
+                            <div style="text-align: right;">
+                                <h3 style="color: #00d4ff; font-size: 1.2rem; margin-bottom: 5px; text-transform: uppercase;">Investment Estimate</h3>
+                                <h2 style="color: #00d4ff; font-size: 2.8rem; margin: 0; font-weight: 600;">${finalProjectTotal.toLocaleString()} EGP</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAGE 2: FULL BLUEPRINT (Auto-Scaled) -->
+                <div style="${pageStyle}">
+                    <h2 style="color: #00d4ff; border-bottom: 1px solid #00d4ff; padding-bottom: 10px; margin-bottom: 20px; font-size: 1.8rem;">Architecture & Coverage Overview</h2>
+                    <div style="flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #111; border-radius: 12px; overflow: hidden; border: 1px solid #333; padding: 20px;">
+                        ${dataUrl ? `<img src="${dataUrl}" style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px;">` : `<p style="opacity:0.5;">No drawings found to export.</p>`}
+                    </div>
+                    <div style="margin-top: 15px; font-size: 0.8rem; opacity: 0.6; text-align: center;">
+                        * This overview includes all architectures, devices, and coverage zones.
+                    </div>
+                </div>
+
+                <!-- PAGE 3: SUMMARY -->
+      <div class="html2pdf__page-break"></div>
+
+        <div style="${pageStyle} justify-content: center; align-items: center; text-align: center;">
+<div style="margin-top: 30px; text-align: center;">
+    <div style="display: inline-block;padding: 12px; ">
+            <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 150px; margin-top: 60px; opacity: 0.5;">
+            
+
+    </div>
+      
+</div>
+            <div style="max-width: 600px;">
+                <h2 style="color: #00d4ff; font-size: 2.5rem; margin-bottom: 10px;">We're always here for you </h2>
+                <p style="font-size: 1.2rem; opacity: 0.8; margin-bottom: 40px;">Our team is ready to answer any technical or financial questions you may have.</p>
+                <div style="display: flex; justify-content: center; gap: 30px;">
+                    <div style="${cardStyle} padding: 30px; min-width: 200px;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">📞</div>
+                        <strong style="color: #00d4ff;">Call Us</strong>
+                        <p style="margin: 5px 0 0 0;">+20 104 074 3437</p>
+                    </div>
+                    <div style="${cardStyle} padding: 30px; min-width: 200px;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">📧</div>
+                        <strong style="color: #00d4ff;">Email Us</strong>
+                        <p style="margin: 5px 0 0 0;">thesmarthome404@gmail.com</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+            const opt = {
+                margin: 0,
+                filename: `${currentPropertyData.clientName}_Blueprint_Report.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, backgroundColor: '#0a0e14', useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+            };
+
+            await html2pdf().from(container).set(opt).save();
+            btn.innerText = "📄 Generate PDF Report";
+            btn.disabled = false;
+        } catch (err) {
+            console.error("PDF Error:", err);
+            alert("Failed to generate PDF. Check console.");
+            btn.innerText = "📄 Generate PDF Report";
+            btn.disabled = false;
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
