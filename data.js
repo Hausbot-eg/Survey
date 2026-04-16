@@ -244,17 +244,22 @@ function initFirebaseSync() {
     const { collection, onSnapshot, doc } = window.fbMethods;
 
     // Listen for Devices changes
- onSnapshot(collection(window.db, "devices"), (snap) => {
-    devicesDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
-    
-    // Refresh standard UI
-    if (typeof renderDevicesList === 'function') renderDevicesList();
-    
-    // FIX: Refresh Admin UI automatically when data changes
-    if (document.getElementById('adminPage').classList.contains('active')) {
-        renderAdminDevices();
-    }
-});
+    onSnapshot(collection(window.db, "devices"), (snap) => {
+        devicesDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+        
+        // Refresh standard UI
+        if (typeof renderDevicesList === 'function') renderDevicesList();
+        
+        // FIX: Refresh Admin UI automatically when data changes
+        if (document.getElementById('adminPage').classList.contains('active')) {
+            renderAdminDevices();
+        }
+
+        // Refresh Rooms page categories if active
+        if (document.getElementById('roomsPage').classList.contains('active') && typeof renderRoomsPage === 'function') {
+            renderRoomsPage();
+        }
+    });
     // Listen for Properties changes
     onSnapshot(collection(window.db, "properties"), (snap) => {
         propertiesDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));

@@ -275,7 +275,10 @@ function renderDeviceCategories(property) {
 
     Object.keys(DEVICE_CATEGORIES).forEach(categoryKey => {
         const categoryInfo = DEVICE_CATEGORIES[categoryKey];
-        const categoryDevices = devicesDatabase.filter(d => d.category === categoryKey && d.active);
+        const categoryDevices = devicesDatabase.filter(d => {
+            const isActive = d.status === 'Active' || (d.status === undefined && d.active !== false);
+            return d.category === categoryKey && isActive;
+        });
 
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'device-category';
@@ -1027,12 +1030,14 @@ function closeAddDeviceModal() {
 }
 
 function clearAddDeviceForm() {
-    document.getElementById('newDeviceName').value = '';
-    document.getElementById('newDeviceCategory').value = '';
-    document.getElementById('newDeviceBrand').value = '';
-    document.getElementById('newDeviceProtocol').value = '';
-    document.getElementById('newDevicePrice').value = '';
-    document.getElementById('newDeviceSupplier').value = '';
+    const fields = [
+        'newDeviceName', 'newDeviceCategory', 'newDeviceBrand', 'newDeviceProtocol', 'newDevicePrice', 'newDeviceSupplier',
+        'addDeviceName', 'addDeviceBrand', 'addDeviceCategory', 'addDeviceSupplier', 'addDeviceProtocol', 'addDevicePrice', 'addDeviceGroup', 'addDeviceCoverage'
+    ];
+    fields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
 }
 
 
@@ -1288,6 +1293,7 @@ async function saveNewDevice() {
         group: parseInt(document.getElementById('addDeviceGroup').value) || 1,
         coverage: parseFloat(document.getElementById('addDeviceCoverage').value) || 0,
         status: document.getElementById('addDeviceStatus').value,
+        active: document.getElementById('addDeviceStatus').value === 'Active',
         createdDate: new Date().toISOString() // This ensures the date is valid
     };
 
@@ -1341,7 +1347,9 @@ async function saveEditedDevice() {
         protocol: document.getElementById('editDeviceProtocol').value,
         price: parseFloat(document.getElementById('editDevicePrice').value) || 0,
         group: parseInt(document.getElementById('editDeviceGroup').value) || 1,
-        coverage: parseFloat(document.getElementById('editDeviceCoverage').value) || 0
+        coverage: parseFloat(document.getElementById('editDeviceCoverage').value) || 0,
+        status: document.getElementById('editDeviceStatus').value,
+        active: document.getElementById('editDeviceStatus').value === 'Active'
     };
     await updateDoc(doc(window.db, "devices", currentEditingDeviceId), updatedData);
     document.getElementById('editDeviceModal').classList.remove('active');
