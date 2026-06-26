@@ -106,7 +106,7 @@
 </div>
 </div>
 
-    <div class="tool-group" style="margin-top: auto;">
+    <div class="tool-group" style="margin-top: 20px;">
         <button onclick="saveLayoutToFirebase()" style="background: #2ecc71; color: white; margin-bottom: 8px; font-weight: bold;">💾 Save Layout</button>
         <button id="btn-pdf" onclick="generateBlueprintPDF()" style="background: #00d4ff; color: #0a0e14; margin-bottom: 8px; font-weight: bold;">📄 Generate PDF Report</button>
         <button onclick="window.close()" style="background: #e74c3c; color: white;">❌ Close</button>
@@ -1029,7 +1029,7 @@ function renderPropertyDevices(property) {
                     if (dev) hardwareSubtotal += (dev.price * rd.quantity);
                 });
             });
-            const serviceFees = Math.max(3000, hardwareSubtotal * 0.10);
+            const serviceFees = Math.max(3000, hardwareSubtotal * 0.15);
             const finalProjectTotal = hardwareSubtotal + serviceFees;
 
             const pageStyle = `

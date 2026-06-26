@@ -589,7 +589,7 @@ async function generatePDF() {
 
     // --- FINANCIAL CALCULATIONS ---
     const hardwareSubtotal = calculatePropertyTotal(property);
-    const serviceFees = hardwareSubtotal * 0.10; // 10% Services
+    const serviceFees = hardwareSubtotal * 0.15; // 15% Services
     if (serviceFees<3000){
 
         fees=3000;
@@ -851,7 +851,7 @@ Object.values(aggregatedDevices).forEach(device => {
                 <div style="${cardStyle} flex-direction: row; justify-content: space-between; align-items: center; border-left: 5px solid #00d4ff;">
                     <div>
                         <span style="font-size: 1.1rem; display: block;">Technical Services & Installation</span>
-                        <small style="opacity: 0.6;">Professional integration and setup (10%)</small>
+                        <small style="opacity: 0.6;">Professional integration and setup (15%)</small>
                     </div>
                     
                     <span style="font-size: 1.2rem; font-weight: 600;">+ ${fees} EGP</span>
