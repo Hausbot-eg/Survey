@@ -698,31 +698,96 @@ async function generatePDF() {
     `;
 
     // --- ROOM-BY-ROOM BREAKDOWN ---
-    property.rooms.forEach(room => {
-        if (room.devices && room.devices.length > 0) {
-            let roomRows = '';
-            let roomTotal = 0;
-            room.devices.forEach(roomDevice => {
-                const device = getDeviceById(roomDevice.deviceId);
-                if (device) {
-                    const subtotal = device.price * roomDevice.quantity;
-                    roomTotal += subtotal;
-                    roomRows += `
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                            <td style="padding: 15px 10px; font-weight: 600;">${device.name}</td>
-                            <td style="padding: 15px 10px; text-align: center;">${roomDevice.quantity}</td>
-                            <td style="padding: 15px 10px; text-align: center;">${device.price.toLocaleString()}</td>
-                            <td style="padding: 15px 10px; text-align: right; font-weight: bold; color: #00d4ff;">${subtotal.toLocaleString()} EGP</td>
-                        </tr>
-                    `;
-                }
-            });
+    // property.rooms.forEach(room => {
+    //     if (room.devices && room.devices.length > 0) {
+    //         let roomRows = '';
+    //         let roomTotal = 0;
+    //         room.devices.forEach(roomDevice => {
+    //             const device = getDeviceById(roomDevice.deviceId);
+    //             if (device) {
+    //                 const subtotal = device.price * roomDevice.quantity;
+    //                 roomTotal += subtotal;
+    //                 roomRows += `
+    //                     <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+    //                         <td style="padding: 15px 10px; font-weight: 600;">${device.name}</td>
+    //                         <td style="padding: 15px 10px; text-align: center;">${roomDevice.quantity}</td>
+    //                         <td style="padding: 15px 10px; text-align: center;">${device.price.toLocaleString()}</td>
+    //                         <td style="padding: 15px 10px; text-align: right; font-weight: bold; color: #00d4ff;">${subtotal.toLocaleString()} EGP</td>
+    //                     </tr>
+    //                 `;
+    //             }
+    //         });
 
-            html += `
+    //         html += `
+    //             <div style="${pageStyle}">
+    //                 <div style="background: rgba(0, 212, 255, 0.1); border-left: 5px solid #00d4ff; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+    //                     <h2 style="color: #00d4ff; font-size: 2.2rem; margin: 0; text-transform: capitalize;">${room.name}</h2>
+    //                     <p style="margin: 5px 0 0 0; opacity: 0.7; font-size: 1.1rem;">Floor: ${room.floor || 'N/A'}</p>
+    //                 </div>
+    //                 <table style="width: 100%; border-collapse: collapse;">
+    //                     <thead>
+    //                         <tr style="border-bottom: 2px solid #00d4ff; text-transform: uppercase; font-size: 0.9rem; color: #00d4ff;">
+    //                             <th style="text-align: left; padding: 10px;">Device Description</th>
+    //                             <th style="text-align: center; padding: 10px;">Qty</th>
+    //                             <th style="text-align: center; padding: 10px;">Unit Price</th>
+    //                             <th style="text-align: right; padding: 10px;">Subtotal</th>
+    //                         </tr>
+    //                     </thead>
+    //                     <tbody>${roomRows}</tbody>
+    //                 </table>
+    //                 <div style=" text-align: right; padding-top: 20px;margin-top:auto;">
+    //                     <span style="font-size: 1.2rem; margin-right: 20px; opacity: 0.8;">Room Total:</span>
+    //                     <span style="font-size: 1.8rem; color: #00d4ff; font-weight: bold;">${roomTotal.toLocaleString()} EGP</span>
+    //                 </div>
+    //             </div>
+    //             <div class="html2pdf__page-break"></div>
+    //         `;
+    //     }
+    // });
+const maxRowsPerroomPage = 10; // Adjust based on styling
+
+property.rooms.forEach(room => {
+    if (room.devices && room.devices.length > 0) {
+        let roomTotal = 0;
+        let roomRowCount = 0;
+
+        // Start the first page for this room
+        html += `
+            <div style="${pageStyle}">
+                <div style="background: rgba(0, 212, 255, 0.1); border-left: 5px solid #00d4ff; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+                    <h2 style="color: #00d4ff; font-size: 2.2rem; margin: 0; text-transform: capitalize;">${room.name}</h2>
+                    <p style="margin: 5px 0 0 0; opacity: 0.7; font-size: 1.1rem;">Floor: ${room.floor || 'N/A'}</p>
+                </div>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #00d4ff; text-transform: uppercase; font-size: 0.9rem; color: #00d4ff;">
+                            <th style="text-align: left; padding: 10px;">Device Description</th>
+                            <th style="text-align: center; padding: 10px;">Qty</th>
+                            <th style="text-align: center; padding: 10px;">Unit Price</th>
+                            <th style="text-align: right; padding: 10px;">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        // Filter valid devices to correctly track indices
+        const validDevices = room.devices.filter(d => getDeviceById(d.deviceId));
+
+        validDevices.forEach((roomDevice, index) => {
+            const device = getDeviceById(roomDevice.deviceId);
+            const subtotal = device.price * roomDevice.quantity;
+            roomTotal += subtotal;
+
+            // Check if we need to split onto a new page before rendering this row
+            if (roomRowCount > 0 && roomRowCount % maxRowsPerroomPage === 0) {
+                html += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="html2pdf__page-break"></div>
                 <div style="${pageStyle}">
-                    <div style="background: rgba(0, 212, 255, 0.1); border-left: 5px solid #00d4ff; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
-                        <h2 style="color: #00d4ff; font-size: 2.2rem; margin: 0; text-transform: capitalize;">${room.name}</h2>
-                        <p style="margin: 5px 0 0 0; opacity: 0.7; font-size: 1.1rem;">Floor: ${room.floor || 'N/A'}</p>
+                    <div style="background: rgba(0, 212, 255, 0.05); border-left: 5px solid rgba(0, 212, 255, 0.5); border-radius: 8px; padding: 15px; margin-bottom: 30px;">
+                        <h2 style="color: #00d4ff; font-size: 1.8rem; margin: 0; opacity: 0.7; text-transform: capitalize;">${room.name} (Cont.)</h2>
                     </div>
                     <table style="width: 100%; border-collapse: collapse;">
                         <thead>
@@ -733,17 +798,36 @@ async function generatePDF() {
                                 <th style="text-align: right; padding: 10px;">Subtotal</th>
                             </tr>
                         </thead>
-                        <tbody>${roomRows}</tbody>
-                    </table>
-                    <div style=" text-align: right; padding-top: 20px;margin-top:auto;">
-                        <span style="font-size: 1.2rem; margin-right: 20px; opacity: 0.8;">Room Total:</span>
-                        <span style="font-size: 1.8rem; color: #00d4ff; font-weight: bold;">${roomTotal.toLocaleString()} EGP</span>
-                    </div>
-                </div>
-                <div class="html2pdf__page-break"></div>
+                        <tbody>
+                `;
+            }
+
+            // Append the row HTML
+            html += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <td style="padding: 15px 10px; font-weight: 600;">${device.name}</td>
+                    <td style="padding: 15px 10px; text-align: center;">${roomDevice.quantity}</td>
+                    <td style="padding: 15px 10px; text-align: center;">${device.price.toLocaleString()}</td>
+                    <td style="padding: 15px 10px; text-align: right; font-weight: bold; color: #00d4ff;">${subtotal.toLocaleString()} EGP</td>
+                </tr>
             `;
-        }
-    });
+
+            roomRowCount++;
+        });
+
+        // Close out the final page container for the room and attach the Room Total block
+        html += `
+                    </tbody>
+                </table>
+                <div style="text-align: right; padding-top: 20px; margin-top: auto;">
+                    <span style="font-size: 1.2rem; margin-right: 20px; opacity: 0.8;">Room Total:</span>
+                    <span style="font-size: 1.8rem; color: #00d4ff; font-weight: bold;">${roomTotal.toLocaleString()} EGP</span>
+                </div>
+            </div>
+            <div class="html2pdf__page-break"></div>
+        `;
+    }
+});
 
  // Configuration
 const maxRowsPerPage = 15; // Adjust this number based on your styling
