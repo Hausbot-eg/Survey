@@ -84,6 +84,12 @@
                 <div class="property-total-cost-label">Property Total Cost</div>
                 <div class="property-total-cost-amount" id="propertyTotalCost">0 EGP</div>
             </div>
+            <div class="property-card" style="width: 100%; padding: 12px 15px; margin-bottom: 20px; cursor: default; display: flex; align-items: center; gap: 12px;">
+                <label class="form-label" for="propertyTaxPercentage" style="margin: 0; white-space: nowrap;">Service / Tax Percentage (%)</label>
+                <input type="text" inputmode="decimal" class="form-input" id="propertyTaxPercentage" value="15"
+                       onchange="updatePropertyTaxPercentage(this.value)" style="max-width: 140px; margin: 0;">
+                <small style="opacity: 0.65;">Used for the existing percentage-or-minimum-3000 EGP calculation.</small>
+            </div>
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
     <div class="room-tabs" id="roomTabs" style="margin-bottom: 0; flex-wrap: nowrap; overflow-x: auto;"></div>
     
@@ -138,7 +144,8 @@
             </div>
 
             <!-- Action Buttons -->
-             <button class="btn btn-primary" onclick="generatePDF()">Generate PDF Report</button>
+             <button class="btn btn-primary" onclick="generatePDF()">Detailed Quotation</button>
+             <button class="btn btn-primary" onclick="generateGroupedPDF()">Quotation Summary</button>
             <button class="btn btn-secondary" onclick="goToRooms()">Back to Rooms</button>
         </div>
 
@@ -147,7 +154,7 @@
         <h1 class="dashboard-title" style="margin-bottom: 20px;">Admin Dashboard</h1>
         
         <div class="property-card" style="width: 100%; padding: 15px; cursor: default; overflow-x: auto;">
-            <table id="adminDevicesTable" style="width: 100%; border-collapse: collapse; color: white; min-width: 1000px;">
+            <table id="adminDevicesTable" style="width: 100%; border-collapse: collapse; color: white; min-width: 1150px;">
                 <thead>
     <tr style="border-bottom: 2px solid rgba(255,255,255,0.1); color: var(--primary-color);">
         <th style="padding: 12px; text-align: left;">Device & Brand</th>
@@ -155,6 +162,8 @@
         <th style="padding: 12px; text-align: left;">Group</th>
         <th style="padding: 12px; text-align: left;">Protocol</th>
         <th style="padding: 12px; text-align: left;">Price</th>
+        <th style="padding: 12px; text-align: center;">Weight</th>
+        <th style="padding: 12px; text-align: left;">Subgroup</th>
         <th style="padding: 12px; text-align: left;">Status</th>
         <th style="padding: 12px; text-align: left;">Coverage</th>
         <th style="padding: 12px; text-align: left;">Created</th>
@@ -169,6 +178,65 @@
             <button class="btn btn-add" style="margin: 0; flex: 1; padding: 15px;" onclick="openAddDeviceModal()">
                 + Add New Device
             </button>
+        </div>
+
+        <!-- Quotation Hierarchy Management -->
+        <div class="property-card hierarchy-admin-card" style="display:block; width:100%; cursor:default;">
+            <div class="hierarchy-admin-header">
+                <div>
+                    <div class="hierarchy-kicker">QUOTATION STRUCTURE</div>
+                    <h3>Parent Groups</h3>
+                    <small>Create the main solution families that will organize the customer quotation.</small>
+                </div>
+                <div class="hierarchy-create-row">
+                    <input type="text" class="form-input" id="newParentGroupName" placeholder="Parent group, e.g. Lighting Control">
+                    <button class="btn btn-add" onclick="addDeviceParentGroup()">+ Add Parent Group</button>
+                </div>
+            </div>
+            <div class="hierarchy-table-wrap">
+                <table class="hierarchy-admin-table">
+                    <thead>
+                        <tr>
+                            <th>Parent Group</th>
+                            <th class="center-col">Subgroups</th>
+                            <th class="center-col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="deviceParentGroupsList"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="property-card hierarchy-admin-card" style="display:block; width:100%; cursor:default;">
+            <div class="hierarchy-admin-header hierarchy-admin-header-stacked">
+                <div>
+                    <div class="hierarchy-kicker">SECOND LEVEL</div>
+                    <h3>Quotation Subgroups</h3>
+                    <small>Every subgroup belongs to one parent group and keeps its own measuring unit.</small>
+                </div>
+                <div class="hierarchy-create-row subgroup-create-row">
+                    <select class="form-select" id="newSubgroupParentGroup">
+                        <option value="">Select parent group</option>
+                    </select>
+                    <input type="text" class="form-input" id="newSubgroupName" placeholder="Subgroup, e.g. Lighting Points">
+                    <input type="text" class="form-input" id="newSubgroupUnit" placeholder="Unit, e.g. Point / m / Unit">
+                    <button class="btn btn-add" onclick="addDeviceSubgroup()">+ Add Subgroup</button>
+                </div>
+            </div>
+            <div class="hierarchy-table-wrap">
+                <table class="hierarchy-admin-table subgroup-admin-table">
+                    <thead>
+                        <tr>
+                            <th>Parent Group</th>
+                            <th>Subgroup Name</th>
+                            <th>Measuring Unit</th>
+                            <th class="center-col">Assigned Devices</th>
+                            <th class="center-col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="deviceSubgroupsList"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Group Color Management Section (Moved to bottom and shrunk) -->
@@ -225,6 +293,10 @@
         <div class="form-group">
             <label class="form-label">Price (EGP)</label>
             <input type="number" class="form-input" id="addDevicePrice">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Weight</label>
+            <input type="text" inputmode="decimal" class="form-input" id="addDeviceWeight" value="1">
         </div>
         <div class="form-group">
             <label class="form-label">Group</label>
@@ -287,6 +359,10 @@
         <div class="form-group">
             <label class="form-label">Price (EGP)</label>
             <input type="number" class="form-input" id="editDevicePrice">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Weight</label>
+            <input type="text" inputmode="decimal" class="form-input" id="editDeviceWeight" value="1">
         </div>
         <div class="form-group">
             <label class="form-label">Group</label>
@@ -387,6 +463,11 @@
             <div class="form-group">
                 <label class="form-label">Price (EGP) *</label>
                 <input type="number" class="form-input" id="newDevicePrice" placeholder="0" min="0">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Weight</label>
+                <input type="text" inputmode="decimal" class="form-input" id="newDeviceWeight" value="1">
             </div>
 
             <div class="form-group">
@@ -529,8 +610,10 @@ window.addEventListener('message', async (event) => {
 window.db = db;
 window.fbMethods = { doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs, getDoc };</script>
 
+<script src="embedded-assets.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script src="migrations.js"></script>
 
 
 </body>

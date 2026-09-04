@@ -1,6 +1,10 @@
 // ===== DATA MANAGEMENT =====
 // This file contains all the data structures and default data for the application
 
+// Shared defaults for new records and one-time migrations
+const DEFAULT_DEVICE_WEIGHT = 1;
+const DEFAULT_PROPERTY_TAX_PERCENTAGE = 15;
+
 // Device Categories
 const DEVICE_CATEGORIES = {
     switch: { name: 'Smart Switches', icon: '⚡' },
@@ -129,6 +133,8 @@ const DEFAULT_DEVICES_LIST = [
     }
 ];
 let devicesDatabase = [];
+let deviceParentGroupsDatabase = [];
+let deviceSubgroupsDatabase = [];
 // Properties Database
 let propertiesDatabase = [];
 let groupColors = {
@@ -155,6 +161,7 @@ async function seedDevicesOnce() {
                         protocol: device.protocol,
                         price: device.price,
                         supplier: device.supplier,
+                        weight: Number.isFinite(Number(device.weight)) ? Number(device.weight) : DEFAULT_DEVICE_WEIGHT,
                         active: true
                     };
 
@@ -179,6 +186,16 @@ let editingDeviceId = null;
 
 function getDeviceById(deviceId) {
     return devicesDatabase.find(d => (d.firebaseId && d.firebaseId == deviceId) || d.id == deviceId);
+}
+
+function getDeviceParentGroupById(parentGroupId) {
+    if (!parentGroupId) return null;
+    return deviceParentGroupsDatabase.find(group => group.firebaseId === parentGroupId || group.id == parentGroupId) || null;
+}
+
+function getDeviceSubgroupById(subgroupId) {
+    if (!subgroupId) return null;
+    return deviceSubgroupsDatabase.find(s => s.firebaseId === subgroupId || s.id == subgroupId) || null;
 }
 
 function getPropertyById(propertyId) {
@@ -260,6 +277,43 @@ function initFirebaseSync() {
             renderRoomsPage();
         }
     });
+    // Listen for Quotation Parent Groups changes
+    onSnapshot(collection(window.db, "deviceParentGroups"), (snap) => {
+        deviceParentGroupsDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+        deviceParentGroupsDatabase.sort((a, b) => {
+            const aOther = String(a.name || '').trim().toLowerCase() === 'other';
+            const bOther = String(b.name || '').trim().toLowerCase() === 'other';
+            if (aOther !== bOther) return Number(aOther) - Number(bOther);
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        });
+
+        if (typeof renderParentGroupsAdmin === 'function' && document.getElementById('adminPage')?.classList.contains('active')) {
+            renderParentGroupsAdmin();
+        }
+        if (typeof renderSubgroupsAdmin === 'function' && document.getElementById('adminPage')?.classList.contains('active')) {
+            renderSubgroupsAdmin();
+        }
+        if (typeof renderAdminDevices === 'function' && document.getElementById('adminPage')?.classList.contains('active')) {
+            renderAdminDevices();
+        }
+    });
+
+    // Listen for Device Subgroups changes
+    onSnapshot(collection(window.db, "deviceSubgroups"), (snap) => {
+        deviceSubgroupsDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+        deviceSubgroupsDatabase.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+        if (typeof renderAdminDevices === 'function' && document.getElementById('adminPage')?.classList.contains('active')) {
+            renderAdminDevices();
+        }
+        if (typeof renderSubgroupsAdmin === 'function' && document.getElementById('adminPage')?.classList.contains('active')) {
+            renderSubgroupsAdmin();
+        }
+        if (typeof renderParentGroupsAdmin === 'function' && document.getElementById('adminPage')?.classList.contains('active')) {
+            renderParentGroupsAdmin();
+        }
+    });
+
     // Listen for Properties changes
     onSnapshot(collection(window.db, "properties"), (snap) => {
         propertiesDatabase = snap.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));

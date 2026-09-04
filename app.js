@@ -107,6 +107,7 @@ async function createNewProperty(clientName, clientPhone, propertyType, location
         propertyType: propertyType,
         location: location,
         totalArea: totalArea,
+        taxPercentage: DEFAULT_PROPERTY_TAX_PERCENTAGE,
         rooms: [],
         createdAt: new Date()
     };
@@ -228,6 +229,35 @@ function renderRoomsPage() {
     // Update property total cost
     const totalCost = calculatePropertyTotal(property);
     document.getElementById('propertyTotalCost').textContent = totalCost.toLocaleString() + ' EGP';
+
+    const taxInput = document.getElementById('propertyTaxPercentage');
+    if (taxInput) {
+        const storedTaxPercentage = Number(property.taxPercentage);
+        taxInput.value = Number.isFinite(storedTaxPercentage) ? storedTaxPercentage : DEFAULT_PROPERTY_TAX_PERCENTAGE;
+    }
+}
+
+async function updatePropertyTaxPercentage(newPercentage) {
+    const percentage = parseFloat(newPercentage);
+    if (!Number.isFinite(percentage) || percentage < 0) {
+        alert('Please enter a valid percentage (0 or greater).');
+        renderRoomsPage();
+        return;
+    }
+
+    const property = getPropertyById(currentPropertyId);
+    if (!property) return;
+
+
+    const { doc, updateDoc } = window.fbMethods;
+    try {
+        await updateDoc(doc(window.db, "properties", currentPropertyId), { taxPercentage: percentage });
+        property.taxPercentage = percentage;
+    } catch (error) {
+        console.error('Error updating property tax percentage:', error);
+        alert('Could not update the percentage in the cloud database.');
+        renderRoomsPage();
+    }
 }
 
 function renderRoomTabs(property) {
@@ -579,7 +609,148 @@ async function removeDeviceFromInvoice(roomId, deviceId) {
         }
     }
 }
-async function generatePDF() {
+function buildQuotationHierarchy(property) {
+    const hierarchy = {};
+    const configuredOtherParent = deviceParentGroupsDatabase.find(parentGroup =>
+        String(parentGroup.name || '').trim().toLowerCase() === 'other'
+    );
+
+    (property.rooms || []).forEach(room => {
+        (room.devices || []).forEach(roomDevice => {
+            const device = getDeviceById(roomDevice.deviceId);
+            if (!device) return;
+
+            const subgroup = getDeviceSubgroupById(device.subgroupId);
+            const categoryKey = String(device.category || '').trim();
+            const categoryInfo = categoryKey ? DEVICE_CATEGORIES[categoryKey] : null;
+            const fallbackCategoryName = categoryKey ? (categoryInfo?.name || categoryKey) : '';
+            const quantity = Number(roomDevice.quantity) || 0;
+            const weight = Number.isFinite(Number(device.weight)) ? Number(device.weight) : DEFAULT_DEVICE_WEIGHT;
+
+            let parentKey;
+            let parentName;
+            let subgroupKey;
+            let subgroupName;
+            let measuringUnit;
+            let isOther = false;
+
+            if (subgroup) {
+                const parentGroup = getDeviceParentGroupById(subgroup.parentGroupId) || configuredOtherParent || null;
+                parentKey = parentGroup ? `parent-${parentGroup.firebaseId}` : '__other__';
+                parentName = parentGroup?.name || 'Other';
+                subgroupKey = `subgroup-${subgroup.firebaseId}`;
+                subgroupName = subgroup.name || fallbackCategoryName || 'Other';
+                measuringUnit = subgroup.measuringUnit || subgroupName;
+                isOther = !parentGroup || String(parentName).trim().toLowerCase() === 'other';
+            } else if (fallbackCategoryName) {
+                // Preserve the previous fallback: an unassigned device uses its legacy category
+                // as both the grouping label and measuring unit.
+                const matchingParent = deviceParentGroupsDatabase.find(parentGroup =>
+                    String(parentGroup.name || '').trim().toLowerCase() === fallbackCategoryName.toLowerCase()
+                );
+                parentKey = matchingParent ? `parent-${matchingParent.firebaseId}` : `legacy-${categoryKey}`;
+                parentName = fallbackCategoryName;
+                subgroupKey = `legacy-${categoryKey}`;
+                subgroupName = fallbackCategoryName;
+                measuringUnit = fallbackCategoryName;
+            } else {
+                parentKey = configuredOtherParent ? `parent-${configuredOtherParent.firebaseId}` : '__other__';
+                parentName = configuredOtherParent?.name || 'Other';
+                subgroupKey = '__other__';
+                subgroupName = 'Other';
+                measuringUnit = 'Other';
+                isOther = true;
+            }
+
+            if (!hierarchy[parentKey]) {
+                hierarchy[parentKey] = {
+                    key: parentKey,
+                    name: parentName,
+                    isOther,
+                    subgroups: {}
+                };
+            }
+
+            if (!hierarchy[parentKey].subgroups[subgroupKey]) {
+                hierarchy[parentKey].subgroups[subgroupKey] = {
+                    key: subgroupKey,
+                    name: subgroupName,
+                    measuringUnit,
+                    weightedCount: 0,
+                    isOther: subgroupKey === '__other__'
+                };
+            }
+
+            hierarchy[parentKey].subgroups[subgroupKey].weightedCount += quantity * weight;
+        });
+    });
+
+    return Object.values(hierarchy)
+        .map(parentGroup => ({
+            ...parentGroup,
+            subgroups: Object.values(parentGroup.subgroups).sort((a, b) => {
+                if (a.isOther !== b.isOther) return Number(a.isOther) - Number(b.isOther);
+                return String(a.name || '').localeCompare(String(b.name || ''));
+            })
+        }))
+        .sort((a, b) => {
+            if (a.isOther !== b.isOther) return Number(a.isOther) - Number(b.isOther);
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        });
+}
+
+function paginateQuotationHierarchy(parentGroups, maxRowsPerPage = 5) {
+    if (!parentGroups.length) return [[]];
+
+    const pages = [];
+    let currentPage = [];
+    let usedRows = 0;
+
+    const pushPage = () => {
+        if (currentPage.length) pages.push(currentPage);
+        currentPage = [];
+        usedRows = 0;
+    };
+
+    parentGroups.forEach(parentGroup => {
+        const subgroups = parentGroup.subgroups.length ? parentGroup.subgroups : [{
+            name: 'No items', measuringUnit: '—', weightedCount: 0
+        }];
+        let index = 0;
+
+        while (index < subgroups.length) {
+            if (usedRows >= maxRowsPerPage) pushPage();
+
+            const availableRows = Math.max(1, maxRowsPerPage - usedRows);
+            const slice = subgroups.slice(index, index + availableRows);
+
+            currentPage.push({
+                ...parentGroup,
+                continuation: index > 0,
+                subgroups: slice
+            });
+            usedRows += slice.length;
+            index += slice.length;
+
+            if (index < subgroups.length) pushPage();
+        }
+    });
+
+    pushPage();
+    return pages.length ? pages : [[]];
+}
+
+function formatWeightedQuantity(value) {
+    const numericValue = Number(value) || 0;
+    return Number.isInteger(numericValue)
+        ? numericValue.toLocaleString()
+        : numericValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+const PDF_LOGO_SRC = (window.HAUSBOT_EMBEDDED_ASSETS && window.HAUSBOT_EMBEDDED_ASSETS.logo) || 'logo.png';
+const PDF_SUMMARY_BACKGROUND_SRC = (window.HAUSBOT_EMBEDDED_ASSETS && window.HAUSBOT_EMBEDDED_ASSETS.quotationSummaryBackground) || 'quotation_summary_background.jpg';
+
+async function generatePDF(groupByCategory = false) {
     if (typeof html2pdf === 'undefined') {
         alert("The PDF library is being blocked by your browser settings.");
         return;
@@ -587,16 +758,31 @@ async function generatePDF() {
     const property = getPropertyById(currentPropertyId);
     if (!property) return;
 
+    if (groupByCategory) {
+        await new Promise(resolve => {
+            const background = new Image();
+            let settled = false;
+            const finish = () => {
+                if (!settled) {
+                    settled = true;
+                    resolve();
+                }
+            };
+            background.onload = finish;
+            background.onerror = finish;
+            background.src = PDF_SUMMARY_BACKGROUND_SRC;
+            if (background.complete) finish();
+            setTimeout(finish, 2000);
+        });
+    }
+
     // --- FINANCIAL CALCULATIONS ---
     const hardwareSubtotal = calculatePropertyTotal(property);
-    const serviceFees = hardwareSubtotal * 0.15; // 15% Services
-    if (serviceFees<3000){
-
-        fees=3000;
-    }else{
-        fees= serviceFees;
-    }
-    const taxAmount = hardwareSubtotal * 0.0;    // 4% Tax
+    const storedTaxPercentage = Number(property.taxPercentage);
+    const taxPercentage = Number.isFinite(storedTaxPercentage) ? storedTaxPercentage : DEFAULT_PROPERTY_TAX_PERCENTAGE;
+    const serviceFees = hardwareSubtotal * (taxPercentage / 100);
+    const fees = serviceFees < 3000 ? 3000 : serviceFees;
+    const taxAmount = hardwareSubtotal * 0.0;
     const finalProjectTotal = hardwareSubtotal + fees + taxAmount;
 
     const element = document.createElement('div');
@@ -637,8 +823,7 @@ async function generatePDF() {
             <div style="text-align: center; margin-bottom: 20px;">
 <div style="text-align: center; margin-bottom: 20px;">
     <div style="display: inline-block; padding: 10px; border-radius: 8px;">
-            <img src="
-            https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 150px; margin-top: 60px; opacity: 0.5;">
+            <img src="${PDF_LOGO_SRC}" style="max-width: 150px; margin-top: 60px; opacity: 0.5;">
             
     </div>
 </div>
@@ -744,6 +929,7 @@ async function generatePDF() {
     //         `;
     //     }
     // });
+if (!groupByCategory) {
 const maxRowsPerroomPage = 10; // Adjust based on styling
 
 property.rooms.forEach(room => {
@@ -828,63 +1014,103 @@ property.rooms.forEach(room => {
         `;
     }
 });
+}
 
  // Configuration
 const maxRowsPerPage = 15; // Adjust this number based on your styling
 let rowCount = 0;
 
 // --- HARDWARE QUOTATION (TOTAL TABLE) ---
-// Initialize the first page
-html += `
-    <div style="${pageStyle}">
-        <h2 style="color: #00d4ff; padding-bottom: 10px; font-size: 1.8rem;">Full Hardware Quotation</h2>
-        <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
-            <thead>
-                <tr style="text-align: left;">
-                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff;">Item Description</th>
-                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">Qty</th>
-                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">UNIT PRICE</th>
+if (groupByCategory) {
+    const parentGroups = buildQuotationHierarchy(property);
+    const hierarchyPages = paginateQuotationHierarchy(parentGroups, 6);
+    const parentOrder = new Map(parentGroups.map((parentGroup, index) => [parentGroup.key, index + 1]));
 
-                    <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: right;">Total</th>
-                </tr>
-            </thead>
-            <tbody style="font-size: 0.85rem;">
-`;
+    hierarchyPages.forEach((pageGroups, pageIndex) => {
+        const isLastHierarchyPage = pageIndex === hierarchyPages.length - 1;
+        const parentCards = pageGroups.length ? pageGroups.map((parentGroup, parentIndex) => {
+            const rows = parentGroup.subgroups.map(subgroup => `
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 58px 88px; align-items:center; min-height:30px; padding:7px 12px; border-top:1px solid rgba(255,255,255,0.075); gap:8px;">
+                    <div style="font-size:0.78rem; font-weight:600; color:#f4f8fb; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeAdminHtml(subgroup.name)}</div>
+                    <div style="text-align:center; font-size:0.82rem; font-weight:800; color:#ffffff;">${formatWeightedQuantity(subgroup.weightedCount)}</div>
+                    <div style="text-align:right; font-size:0.71rem; color:#a8c7d5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeAdminHtml(subgroup.measuringUnit || 'Unit')}</div>
+                </div>
+            `).join('');
 
+            return `
+                <div style="margin-bottom:9px; border:1px solid rgba(0,212,255,0.20); border-radius:14px; overflow:hidden; background:rgba(3,13,25,0.76); box-shadow:0 12px 30px rgba(0,0,0,0.18);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:linear-gradient(90deg, rgba(0,212,255,0.13), rgba(0,212,255,0.025)); gap:10px;">
+                        <div style="display:flex; align-items:center; min-width:0;">
+                            <span style="width:4px; height:22px; border-radius:6px; background:#00d4ff; display:inline-block; margin-right:10px;"></span>
+                            <div style="font-size:0.84rem; font-weight:800; letter-spacing:0.55px; color:#ffffff; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeAdminHtml(parentGroup.name)}${parentGroup.continuation ? ' · CONT.' : ''}</div>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:minmax(0,1fr) 58px 88px; padding:5px 12px 4px; gap:8px; font-size:0.53rem; letter-spacing:1.05px; color:#6392a5; text-transform:uppercase; font-weight:800;">
+                       
+                    </div>
+                    ${rows}
+                </div>
+            `;
+        }).join('') : `
+            <div style="padding:24px; border:1px solid rgba(0,212,255,0.18); border-radius:14px; background:rgba(3,13,25,0.72); color:#b9cad3; font-size:0.9rem;">
+                No grouped devices have been added to this property yet.
+            </div>
+        `;
 
-        // 1. First, create an object to store aggregated device data
-const aggregatedDevices = {};
-
-property.rooms.forEach(room => {
-    room.devices.forEach(roomDevice => {
-        const deviceId = roomDevice.deviceId;
-        
-        if (aggregatedDevices[deviceId]) {
-            // If device already exists, just add to the quantity
-            aggregatedDevices[deviceId].quantity += roomDevice.quantity;
-        } else {
-            // If it's the first time seeing this device, fetch details and initialize
-            const deviceDetails = getDeviceById(deviceId);
-            if (deviceDetails) {
-                aggregatedDevices[deviceId] = {
-                    ...deviceDetails,
-                    quantity: roomDevice.quantity
-                };
-            }
-        }
-    });
-});
-
-// 2. Now loop through the aggregated object to generate the HTML
-Object.values(aggregatedDevices).forEach(device => {
-    // Check if we need to break to a new page
-    if (rowCount > 0 && rowCount % maxRowsPerPage === 0) {
         html += `
-                </tbody>
-            </table>
+            <div style="${pageStyle} padding:0; overflow:hidden; background-image:linear-gradient(90deg, rgba(3,10,21,0.985) 0%, rgba(3,11,23,0.95) 32%, rgba(3,11,23,0.72) 42%, rgba(3,11,23,0.28) 49%, rgba(3,11,23,0.07) 57%, rgba(3,11,23,0.00) 64%), url('${PDF_SUMMARY_BACKGROUND_SRC}'); background-size:cover; background-position:center;">
+                <div style="position:absolute; inset:0; border:1px solid rgba(0,212,255,0.12); box-sizing:border-box; pointer-events:none;"></div>
+                <div style="position:relative; z-index:2; width:48%; height:100%; padding:26px 18px 22px 38px; display:flex; flex-direction:column;">
+                    <div style="margin-bottom:12px;">
+                        <h2 style="color:#00d4ff; border-bottom:1px solid #00d4ff; padding-bottom:10px; margin:0 0 8px 0; font-size:1.8rem; font-weight:700;">System Quotation</h2>
+                    </div>
+
+                    <div style="min-height:0;">
+                        ${parentCards}
+                    </div>
+
+               ${isLastHierarchyPage ? `
+    <div style="display:flex; justify-content:center; margin-top:14px;">
+        <div style="
+            text-align:center;
+            padding:10px 18px;
+            border-radius:10px;
+            background:rgba(0,212,255,0.09);
+            border:1px solid rgba(0,212,255,0.18);
+            min-width:210px;
+        ">
+            <div style="
+                font-size:0.8rem;
+                letter-spacing:1.05px;
+                color:#00d4ff;
+                text-transform:uppercase;
+                font-weight:700;
+            ">
+                Hardware Subtotal
+            </div>
+
+            <div style="
+                font-size:1.15rem;
+                font-weight:800;
+                color:#ffffff;
+                margin-top:4px;
+            ">
+                ${hardwareSubtotal.toLocaleString()}
+                <span style="font-size:0.68rem; color:#00d4ff;">EGP</span>
+            </div>
         </div>
-        <div style="${pageStyle} page-break-before: always;">
-            <h2 style="color: #00d4ff; padding-bottom: 10px; font-size: 1.8rem; opacity: 0.5;">Full Hardware Quotation (Cont.)</h2>
+    </div>
+` : ''}
+                </div>
+            </div>
+            <div class="html2pdf__page-break"></div>
+        `;
+    });
+} else {
+    // Existing device-by-device hardware quotation remains unchanged.
+    html += `
+        <div style="${pageStyle}">
+            <h2 style="color: #00d4ff; padding-bottom: 10px; font-size: 1.8rem;">Full Hardware Quotation</h2>
             <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
                 <thead>
                     <tr style="text-align: left;">
@@ -895,36 +1121,73 @@ Object.values(aggregatedDevices).forEach(device => {
                     </tr>
                 </thead>
                 <tbody style="font-size: 0.85rem;">
-        `;
-    }
-
-    html += `
-        <tr>
-            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                <strong>${device.name}</strong>
-            </td>
-            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.quantity}</td>
-            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.price}</td>
-            <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: right;">${(device.price * device.quantity).toLocaleString()} EGP</td>
-        </tr>
     `;
 
-    rowCount++; // Ensure rowCount is being incremented to make pagination work
+    const aggregatedDevices = {};
 
-   
-});
+    property.rooms.forEach(room => {
+        room.devices.forEach(roomDevice => {
+            const deviceId = roomDevice.deviceId;
 
+            if (aggregatedDevices[deviceId]) {
+                aggregatedDevices[deviceId].quantity += roomDevice.quantity;
+            } else {
+                const deviceDetails = getDeviceById(deviceId);
+                if (deviceDetails) {
+                    aggregatedDevices[deviceId] = {
+                        ...deviceDetails,
+                        quantity: roomDevice.quantity
+                    };
+                }
+            }
+        });
+    });
 
+    Object.values(aggregatedDevices).forEach(device => {
+        if (rowCount > 0 && rowCount % maxRowsPerPage === 0) {
+            html += `
+                    </tbody>
+                </table>
+            </div>
+            <div style="${pageStyle} page-break-before: always;">
+                <h2 style="color: #00d4ff; padding-bottom: 10px; font-size: 1.8rem; opacity: 0.5;">Full Hardware Quotation (Cont.)</h2>
+                <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
+                    <thead>
+                        <tr style="text-align: left;">
+                            <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff;">Item Description</th>
+                            <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">Qty</th>
+                            <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: center;">UNIT PRICE</th>
+                            <th style="padding: 12px; border-bottom: 1px solid #00d4ff; font-size: 0.9rem; color: #00d4ff; text-align: right;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody style="font-size: 0.85rem;">
+            `;
+        }
+
+        html += `
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);"><strong>${device.name}</strong></td>
+                <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.quantity}</td>
+                <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center;">${device.price}</td>
+                <td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: right;">${(device.price * device.quantity).toLocaleString()} EGP</td>
+            </tr>
+        `;
+
+        rowCount++;
+    });
 
     html += `
                 </tbody>
             </table>
-            <div style=" text-align: right; background: rgba(0,212,255,0.1); padding: 15px; border-radius: 8px;margin-top:auto;">
+            <div style="text-align: right; background: rgba(0,212,255,0.1); padding: 15px; border-radius: 8px; margin-top:auto;">
                 <h3 style="margin: 0; font-size: 1.2rem;">Hardware Subtotal: <span style="color: #00d4ff;">${hardwareSubtotal.toLocaleString()} EGP</span></h3>
             </div>
         </div>
         <div class="html2pdf__page-break"></div>
+    `;
+}
 
+    html += `
         <div style="${pageStyle}">
             <h2 style="color: #00d4ff; border-bottom: 1px solid #00d4ff; padding-bottom: 10px; margin-bottom: 30px; font-size: 1.8rem;">Project Summary</h2>
             <div style="display: flex; flex-direction: column; gap: 15px; max-width: 800px; margin: 0 auto; width: 100%;">
@@ -935,7 +1198,7 @@ Object.values(aggregatedDevices).forEach(device => {
                 <div style="${cardStyle} flex-direction: row; justify-content: space-between; align-items: center; border-left: 5px solid #00d4ff;">
                     <div>
                         <span style="font-size: 1.1rem; display: block;">Technical Services & Installation</span>
-                        <small style="opacity: 0.6;">Professional integration and setup (15%)</small>
+                        <small style="opacity: 0.6;">Professional integration and setup (${taxPercentage}%)</small>
                     </div>
                     
                     <span style="font-size: 1.2rem; font-weight: 600;">+ ${fees} EGP</span>
@@ -1036,7 +1299,7 @@ Object.values(aggregatedDevices).forEach(device => {
         <div style="${pageStyle} justify-content: center; align-items: center; text-align: center;">
 <div style="margin-top: 30px; text-align: center;">
     <div style="display: inline-block;padding: 12px; ">
-            <img src="https://raw.githubusercontent.com/Hausbot-eg/Survey/main/logo.png" style="max-width: 150px; margin-top: 60px; opacity: 0.5;">
+            <img src="${PDF_LOGO_SRC}" style="max-width: 150px; margin-top: 60px; opacity: 0.5;">
             
 
     </div>
@@ -1065,14 +1328,30 @@ Object.values(aggregatedDevices).forEach(device => {
 
     const opt = {
         margin: 0,
-        filename: `${property.clientName}_Survey.pdf`,
+        filename: groupByCategory ? `${property.clientName}_Quotation_Summary.pdf` : `${property.clientName}_Detailed_Quotation.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#0a0e14', scrollY: 0 },
+        html2canvas: {
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#0a0e14',
+            scrollY: 0,
+            onclone: (clonedDocument) => {
+                // file:// pages are opaque origins in Chromium. The website background
+                // must never be part of the canvas used for PDF export.
+                clonedDocument.documentElement.style.setProperty('background-image', 'none', 'important');
+                clonedDocument.body.style.setProperty('background-image', 'none', 'important');
+            }
+        },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
     await html2pdf().set(opt).from(element).save();
+}
+
+function generateGroupedPDF() {
+    return generatePDF(true);
 }
 
 
@@ -1122,6 +1401,11 @@ function clearAddDeviceForm() {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
+
+    ['addDeviceWeight', 'newDeviceWeight'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = DEFAULT_DEVICE_WEIGHT;
+    });
 }
 
 
@@ -1143,6 +1427,7 @@ async function addNewDevice() {
         protocol: document.getElementById('newDeviceProtocol').value.trim(),
         price: price,
         supplier: document.getElementById('newDeviceSupplier').value.trim(),
+        weight: Number.isFinite(parseFloat(document.getElementById('newDeviceWeight')?.value)) ? parseFloat(document.getElementById('newDeviceWeight').value) : DEFAULT_DEVICE_WEIGHT,
         active: true,
         createdAt: new Date()
     };
@@ -1191,7 +1476,10 @@ function updateBackgroundImage() {
 
 document.addEventListener('DOMContentLoaded', function() {
     // Set initial background image
-    document.body.style.backgroundImage = `url('${backgroundImageUrl}')`;
+    // Keep the default background in CSS (embedded as a data URL) so file:// mode stays safe.
+    document.body.style.backgroundImage = backgroundImageUrl && backgroundImageUrl !== 'hausbot_background.jpg'
+        ? `url('${backgroundImageUrl}')`
+        : '';
     document.getElementById('backgroundImageUrl').value = backgroundImageUrl;
     // Close modals when clicking outside
     window.onclick = function(event) {
@@ -1221,7 +1509,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 document.addEventListener('DOMContentLoaded', async function() {
-   document.body.style.backgroundImage = `url('${backgroundImageUrl}')`;
+   document.body.style.backgroundImage = backgroundImageUrl && backgroundImageUrl !== 'hausbot_background.jpg'
+        ? `url('${backgroundImageUrl}')`
+        : '';
     if (document.getElementById('backgroundImageUrl')) {
         document.getElementById('backgroundImageUrl').value = backgroundImageUrl;
     }
@@ -1257,6 +1547,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 function goToAdmin() {
     showPage('adminPage');
     renderAdminDevices();
+    renderParentGroupsAdmin();
+    renderSubgroupsAdmin();
     renderGroupColorSettings();
 }
 
@@ -1300,6 +1592,323 @@ async function saveGroupColors() {
 
 
 
+
+function escapeAdminHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getParentGroupOptions(selectedId = '', placeholder = 'Select parent group') {
+    const options = [`<option value="">${escapeAdminHtml(placeholder)}</option>`];
+    deviceParentGroupsDatabase.forEach(parentGroup => {
+        const selected = parentGroup.firebaseId === selectedId ? ' selected' : '';
+        options.push(`<option value="${escapeAdminHtml(parentGroup.firebaseId)}"${selected}>${escapeAdminHtml(parentGroup.name)}</option>`);
+    });
+    return options.join('');
+}
+
+function refreshNewSubgroupParentOptions() {
+    const select = document.getElementById('newSubgroupParentGroup');
+    if (!select) return;
+    const currentValue = select.value;
+    select.innerHTML = getParentGroupOptions(currentValue, 'Select parent group');
+    if (currentValue && deviceParentGroupsDatabase.some(group => group.firebaseId === currentValue)) {
+        select.value = currentValue;
+    }
+}
+
+function getSubgroupOptions(selectedId = '') {
+    const options = ['<option value="">Not assigned</option>'];
+    const assignedIds = new Set();
+
+    deviceParentGroupsDatabase.forEach(parentGroup => {
+        const subgroups = deviceSubgroupsDatabase.filter(subgroup => subgroup.parentGroupId === parentGroup.firebaseId);
+        if (!subgroups.length) return;
+
+        options.push(`<optgroup label="${escapeAdminHtml(parentGroup.name)}">`);
+        subgroups.forEach(subgroup => {
+            assignedIds.add(subgroup.firebaseId);
+            const selected = subgroup.firebaseId === selectedId ? ' selected' : '';
+            options.push(`<option value="${escapeAdminHtml(subgroup.firebaseId)}"${selected}>${escapeAdminHtml(subgroup.name)}</option>`);
+        });
+        options.push('</optgroup>');
+    });
+
+    const unassignedSubgroups = deviceSubgroupsDatabase.filter(subgroup => !assignedIds.has(subgroup.firebaseId));
+    if (unassignedSubgroups.length) {
+        options.push('<optgroup label="Unassigned parent group">');
+        unassignedSubgroups.forEach(subgroup => {
+            const selected = subgroup.firebaseId === selectedId ? ' selected' : '';
+            options.push(`<option value="${escapeAdminHtml(subgroup.firebaseId)}"${selected}>${escapeAdminHtml(subgroup.name)}</option>`);
+        });
+        options.push('</optgroup>');
+    }
+
+    return options.join('');
+}
+
+function renderParentGroupsAdmin() {
+    const list = document.getElementById('deviceParentGroupsList');
+    if (!list) return;
+
+    refreshNewSubgroupParentOptions();
+
+    if (!deviceParentGroupsDatabase.length) {
+        list.innerHTML = `<tr><td colspan="3" style="padding:18px; text-align:center; opacity:0.65;">No parent groups yet. Create the first solution group above.</td></tr>`;
+        return;
+    }
+
+    list.innerHTML = deviceParentGroupsDatabase.map(parentGroup => {
+        const subgroupCount = deviceSubgroupsDatabase.filter(subgroup => subgroup.parentGroupId === parentGroup.firebaseId).length;
+        return `
+            <tr>
+                <td>
+                    <input type="text" class="form-input" value="${escapeAdminHtml(parentGroup.name)}"
+                        onchange="updateDeviceParentGroupDefinition('${parentGroup.firebaseId}', this.value)"
+                        style="margin:0; min-width:260px;">
+                </td>
+                <td style="text-align:center; font-weight:700; color:#8beaff;">${subgroupCount}</td>
+                <td style="text-align:center;">
+                    <button class="btn-settings" style="background:rgba(255,71,87,0.16);" onclick="deleteDeviceParentGroup('${parentGroup.firebaseId}')">🗑️</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function addDeviceParentGroup() {
+    const nameInput = document.getElementById('newParentGroupName');
+    const name = nameInput?.value.trim();
+
+    if (!name) {
+        alert('Please enter a parent group name.');
+        return;
+    }
+
+    const duplicate = deviceParentGroupsDatabase.some(group => String(group.name || '').trim().toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+        alert('A parent group with this name already exists.');
+        return;
+    }
+
+    const { collection, addDoc } = window.fbMethods;
+    try {
+        await addDoc(collection(window.db, 'deviceParentGroups'), {
+            name,
+            createdAt: new Date().toISOString()
+        });
+        nameInput.value = '';
+    } catch (error) {
+        console.error('Error adding parent group:', error);
+        alert('Could not add parent group.');
+    }
+}
+
+async function updateDeviceParentGroupDefinition(firebaseId, newValue) {
+    const value = String(newValue || '').trim();
+    if (!value) {
+        alert('Parent group name cannot be empty.');
+        renderParentGroupsAdmin();
+        return;
+    }
+
+    const duplicate = deviceParentGroupsDatabase.some(group => group.firebaseId !== firebaseId && String(group.name || '').trim().toLowerCase() === value.toLowerCase());
+    if (duplicate) {
+        alert('A parent group with this name already exists.');
+        renderParentGroupsAdmin();
+        return;
+    }
+
+    const { doc, updateDoc } = window.fbMethods;
+    try {
+        await updateDoc(doc(window.db, 'deviceParentGroups', firebaseId), { name: value });
+    } catch (error) {
+        console.error('Error updating parent group:', error);
+        alert('Could not update parent group.');
+        renderParentGroupsAdmin();
+    }
+}
+
+async function deleteDeviceParentGroup(firebaseId) {
+    const parentGroup = getDeviceParentGroupById(firebaseId);
+    if (!parentGroup) return;
+
+    const subgroupCount = deviceSubgroupsDatabase.filter(subgroup => subgroup.parentGroupId === firebaseId).length;
+    if (subgroupCount > 0) {
+        alert(`This parent group contains ${subgroupCount} subgroup(s). Move or delete those subgroups first.`);
+        return;
+    }
+
+    if (!confirm(`Delete parent group "${parentGroup.name}"?`)) return;
+
+    const { doc, deleteDoc } = window.fbMethods;
+    try {
+        await deleteDoc(doc(window.db, 'deviceParentGroups', firebaseId));
+    } catch (error) {
+        console.error('Error deleting parent group:', error);
+        alert('Could not delete parent group.');
+    }
+}
+
+function renderSubgroupsAdmin() {
+    const list = document.getElementById('deviceSubgroupsList');
+    if (!list) return;
+
+    refreshNewSubgroupParentOptions();
+
+    if (!deviceSubgroupsDatabase.length) {
+        list.innerHTML = `<tr><td colspan="5" style="padding:18px; text-align:center; opacity:0.65;">No subgroups yet. Add the first one above.</td></tr>`;
+        return;
+    }
+
+    list.innerHTML = deviceSubgroupsDatabase.map(subgroup => {
+        const assignedCount = devicesDatabase.filter(device => device.subgroupId === subgroup.firebaseId).length;
+        return `
+            <tr>
+                <td style="min-width:220px;">
+                    <select class="form-select" onchange="updateDeviceSubgroupDefinition('${subgroup.firebaseId}', 'parentGroupId', this.value)" style="margin:0; min-width:205px;">
+                        ${getParentGroupOptions(subgroup.parentGroupId || '', 'Select parent group')}
+                    </select>
+                </td>
+                <td>
+                    <input type="text" class="form-input" value="${escapeAdminHtml(subgroup.name)}"
+                        onchange="updateDeviceSubgroupDefinition('${subgroup.firebaseId}', 'name', this.value)"
+                        style="margin:0; min-width:210px;">
+                </td>
+                <td>
+                    <input type="text" class="form-input" value="${escapeAdminHtml(subgroup.measuringUnit || '')}"
+                        onchange="updateDeviceSubgroupDefinition('${subgroup.firebaseId}', 'measuringUnit', this.value)"
+                        style="margin:0; min-width:160px;">
+                </td>
+                <td style="text-align:center; font-weight:700;">${assignedCount}</td>
+                <td style="text-align:center;">
+                    <button class="btn-settings" style="background:rgba(255,71,87,0.16);" onclick="deleteDeviceSubgroup('${subgroup.firebaseId}')">🗑️</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function addDeviceSubgroup() {
+    const parentInput = document.getElementById('newSubgroupParentGroup');
+    const nameInput = document.getElementById('newSubgroupName');
+    const unitInput = document.getElementById('newSubgroupUnit');
+    const parentGroupId = parentInput?.value || '';
+    const name = nameInput?.value.trim();
+    const measuringUnit = unitInput?.value.trim();
+
+    if (!parentGroupId) {
+        alert('Please select a parent group first.');
+        return;
+    }
+    if (!name || !measuringUnit) {
+        alert('Please enter both subgroup name and measuring unit.');
+        return;
+    }
+
+    const duplicate = deviceSubgroupsDatabase.some(subgroup =>
+        subgroup.parentGroupId === parentGroupId && String(subgroup.name || '').trim().toLowerCase() === name.toLowerCase()
+    );
+    if (duplicate) {
+        alert('A subgroup with this name already exists inside the selected parent group.');
+        return;
+    }
+
+    const { collection, addDoc } = window.fbMethods;
+    try {
+        await addDoc(collection(window.db, 'deviceSubgroups'), {
+            parentGroupId,
+            name,
+            measuringUnit,
+            createdAt: new Date().toISOString()
+        });
+        nameInput.value = '';
+        unitInput.value = '';
+    } catch (error) {
+        console.error('Error adding subgroup:', error);
+        alert('Could not add subgroup.');
+    }
+}
+
+async function updateDeviceSubgroupDefinition(firebaseId, field, newValue) {
+    if (!['name', 'measuringUnit', 'parentGroupId'].includes(field)) return;
+    const value = String(newValue || '').trim();
+
+    if (!value) {
+        const labels = {
+            name: 'Subgroup name cannot be empty.',
+            measuringUnit: 'Measuring unit cannot be empty.',
+            parentGroupId: 'Every subgroup must belong to a parent group.'
+        };
+        alert(labels[field]);
+        renderSubgroupsAdmin();
+        return;
+    }
+
+    const currentSubgroup = getDeviceSubgroupById(firebaseId);
+    if (!currentSubgroup) return;
+    const prospectiveParentId = field === 'parentGroupId' ? value : (currentSubgroup.parentGroupId || '');
+    const prospectiveName = field === 'name' ? value : String(currentSubgroup.name || '').trim();
+
+    if (field === 'name' || field === 'parentGroupId') {
+        const duplicate = deviceSubgroupsDatabase.some(subgroup =>
+            subgroup.firebaseId !== firebaseId &&
+            subgroup.parentGroupId === prospectiveParentId &&
+            String(subgroup.name || '').trim().toLowerCase() === prospectiveName.toLowerCase()
+        );
+        if (duplicate) {
+            alert('A subgroup with this name already exists inside the selected parent group.');
+            renderSubgroupsAdmin();
+            return;
+        }
+    }
+
+    const { doc, updateDoc } = window.fbMethods;
+    try {
+        await updateDoc(doc(window.db, 'deviceSubgroups', firebaseId), { [field]: value });
+    } catch (error) {
+        console.error('Error updating subgroup:', error);
+        alert('Could not update subgroup.');
+        renderSubgroupsAdmin();
+    }
+}
+
+async function deleteDeviceSubgroup(firebaseId) {
+    const subgroup = getDeviceSubgroupById(firebaseId);
+    if (!subgroup) return;
+
+    const assignedCount = devicesDatabase.filter(device => device.subgroupId === firebaseId).length;
+    if (assignedCount > 0) {
+        alert(`This subgroup is assigned to ${assignedCount} device(s). Reassign those devices first.`);
+        return;
+    }
+
+    if (!confirm(`Delete subgroup "${subgroup.name}"?`)) return;
+
+    const { doc, deleteDoc } = window.fbMethods;
+    try {
+        await deleteDoc(doc(window.db, 'deviceSubgroups', firebaseId));
+    } catch (error) {
+        console.error('Error deleting subgroup:', error);
+        alert('Could not delete subgroup.');
+    }
+}
+
+async function updateDeviceSubgroup(firebaseId, subgroupId) {
+    if (!firebaseId) return;
+    const { doc, updateDoc } = window.fbMethods;
+    try {
+        await updateDoc(doc(window.db, 'devices', firebaseId), { subgroupId: subgroupId || null });
+    } catch (error) {
+        console.error('Error updating device subgroup:', error);
+        alert('Could not update device subgroup.');
+        renderAdminDevices();
+    }
+}
 
 // --- 1. RENDER TABLE WITH ALL DATA ---
 function renderAdminDevices() {
@@ -1353,6 +1962,16 @@ function renderAdminDevices() {
             </td>
             <td>${device.protocol || '—'}</td>
             <td style="color: #4cd137; font-weight: bold;">${device.price || 0} EGP</td>
+            <td style="text-align: center;">
+                <input type="text" inputmode="decimal" value="${Number.isFinite(Number(device.weight)) ? Number(device.weight) : DEFAULT_DEVICE_WEIGHT}"
+                    onchange="updateDeviceWeight('${device.firebaseId}', this.value)"
+                    style="width: 72px; padding: 6px; text-align: center; background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(0,212,255,0.3); border-radius: 6px;">
+            </td>
+            <td style="min-width:210px;">
+                <select class="form-input" onchange="updateDeviceSubgroup('${device.firebaseId}', this.value)" style="margin:0; min-width:200px; padding:6px;">
+                    ${getSubgroupOptions(device.subgroupId || '')}
+                </select>
+            </td>
             <td><span class="status-pill ${statusClass}">${status}</span></td>
             <td>${device.coverage || 0}m</td>
             <td style="font-size: 0.8rem; opacity: 0.6;">${dateDisplay}</td>
@@ -1374,6 +1993,7 @@ async function saveNewDevice() {
         supplier: document.getElementById('addDeviceSupplier').value,
         protocol: document.getElementById('addDeviceProtocol').value,
         price: parseFloat(document.getElementById('addDevicePrice').value) || 0,
+        weight: Number.isFinite(parseFloat(document.getElementById('addDeviceWeight').value)) ? parseFloat(document.getElementById('addDeviceWeight').value) : DEFAULT_DEVICE_WEIGHT,
         group: parseInt(document.getElementById('addDeviceGroup').value) || 1,
         coverage: parseFloat(document.getElementById('addDeviceCoverage').value) || 0,
         status: document.getElementById('addDeviceStatus').value,
@@ -1401,7 +2021,7 @@ function openEditDeviceModal(firebaseId) {
     const safeSet = (id, value) => {
         const element = document.getElementById(id);
         if (element) {
-            element.value = value || '';
+            element.value = value ?? '';
         } else {
             console.warn(`Element with ID ${id} was not found in HTML.`);
         }
@@ -1414,6 +2034,7 @@ function openEditDeviceModal(firebaseId) {
     safeSet('editDeviceSupplier', device.supplier);
     safeSet('editDeviceProtocol', device.protocol);
     safeSet('editDevicePrice', device.price);
+    safeSet('editDeviceWeight', Number.isFinite(Number(device.weight)) ? Number(device.weight) : DEFAULT_DEVICE_WEIGHT);
     safeSet('editDeviceGroup', device.group);
     safeSet('editDeviceCoverage', device.coverage);
     safeSet('editDeviceStatus', device.status || 'Active');
@@ -1430,6 +2051,7 @@ async function saveEditedDevice() {
         supplier: document.getElementById('editDeviceSupplier').value,
         protocol: document.getElementById('editDeviceProtocol').value,
         price: parseFloat(document.getElementById('editDevicePrice').value) || 0,
+        weight: Number.isFinite(parseFloat(document.getElementById('editDeviceWeight').value)) ? parseFloat(document.getElementById('editDeviceWeight').value) : DEFAULT_DEVICE_WEIGHT,
         group: parseInt(document.getElementById('editDeviceGroup').value) || 1,
         coverage: parseFloat(document.getElementById('editDeviceCoverage').value) || 0,
         status: document.getElementById('editDeviceStatus').value,
@@ -1438,6 +2060,24 @@ async function saveEditedDevice() {
     await updateDoc(doc(window.db, "devices", currentEditingDeviceId), updatedData);
     document.getElementById('editDeviceModal').classList.remove('active');
 }
+async function updateDeviceWeight(firebaseId, newWeight) {
+    const weight = parseFloat(newWeight);
+    if (!firebaseId || !Number.isFinite(weight) || weight < 0) {
+        alert('Please enter a valid weight (0 or greater).');
+        renderAdminDevices();
+        return;
+    }
+
+    const { doc, updateDoc } = window.fbMethods;
+    try {
+        await updateDoc(doc(window.db, "devices", firebaseId), { weight });
+    } catch (error) {
+        console.error('Error updating device weight:', error);
+        alert('Could not update device weight.');
+        renderAdminDevices();
+    }
+}
+
 async function deleteDeviceFromAdmin(firebaseId) {
     if (!firebaseId) return;
     
